@@ -93,6 +93,7 @@
     <Compile Include="Assets\Scripts\GameLibrary\Map\Room.cs" />
     <Compile Include="Assets\Scripts\GameLibrary\Map\RoomAdjacency.cs" />
     <Compile Include="Assets\Scripts\GameLibrary\Map\RoomConnection.cs" />
+    <Compile Include="Assets\Scripts\GameLibrary\Map\Teleporter.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Assets\Standard Assets\Characters\ThirdPersonCharacter\ThirdPersonCharacterGuidelines.txt" />

@@ -6,19 +6,27 @@ using GameLibrary.Helpers;
 
 namespace GameLibrary.Map
 {
-    public class Room
+    public class Room : IEquatable<Room>
     {
-        protected int _id;
-        public int id { get { return _id; } set { _id = value; } }
+        #region public members
+        public int id;
+        //public List<RoomAdjacency> adjacentRooms { get { return _adjacentRooms; } set { _adjacentRooms = value; } }
+        //public List<Room> connectedRooms { get { return _connectedRooms; } }
+        //public bool isDrawn { get { return _isDrawn; } set { _isDrawn = value; } }
+        #endregion public members
 
-        protected Vector3 _northWestDown;     // the point in the room with the least x, least y, and most z
-        protected Vector3 _southEastUp;       // the point in the room with the most x, most y, and least z
+        #region geographic members
+        protected Vector3 _southWestDown;     // the point in the room with the least x, least y, and least z
+        protected Vector3 _northEastUp;       // the point in the room with the most x, most y, and most z
+        protected float _easternEdgeX;
+        protected float _westernEdgeX;
+        protected float _northernEdgeZ;
+        protected float _southernEdgeZ;
+        protected float _floorY;
+        protected float _ceilingY;
+        #endregion geographic members
 
-                                            // these values can be derived, but this is easy reference
-        //private float _width;               // distance along the x axis
-        //private float _depth;               // distance along the z axis
-        //private float _height;              // distance along the y axis
-
+        #region skin members
         private float _tileWidth;           // distance along the x axis
         private float _tileDepth;           // distance along the z axis
         private float _tileHeight;          // distance along the y axis
@@ -32,38 +40,32 @@ namespace GameLibrary.Map
         private float _brickColorR;
         private float _brickColorG;
         private float _brickColorB;
+        #endregion skin members
 
-        protected float _easternEdgeX;
-        protected float _westernEdgeX;
-        protected float _northernEdgeZ;
-        protected float _southernEdgeZ;
 
         private List<RoomAdjacency> _adjacentRooms;
-        public List<RoomAdjacency> adjacentRooms { get { return _adjacentRooms; } set { _adjacentRooms = value; } }
-
         private List<Room> _connectedRooms;
-        public List<Room> connectedRooms { get { return _connectedRooms; } set { _connectedRooms = value; } }
-
         private bool _isDrawn;
-        public bool isDrawn { get { return _isDrawn; } set { _isDrawn = value; } }
+        private List<Teleporter> _teleportersOut;
+        private List<Teleporter> _teleportersIn;
 
 
 
-        public Room(int id, Vector3 northWestDown, Vector3 southEastUp, int tileSet)
+        public Room(int id, Vector3 southWestDown, Vector3 northEastUp, int tileSet)
         {
-            _id = id;
+            this.id = id;
 
-            _adjacentRooms = new List<RoomAdjacency>();
-            _connectedRooms = new List<Room>();
             _isDrawn = false;
 
-            _northWestDown = northWestDown;
-            _southEastUp = southEastUp;
+            _southWestDown = southWestDown;
+            _northEastUp = northEastUp;
 
-            _easternEdgeX = _northWestDown.x;
-            _westernEdgeX = _southEastUp.x;
-            _northernEdgeZ = _southEastUp.z;
-            _southernEdgeZ = _northWestDown.z;
+            _easternEdgeX = _northEastUp.x;
+            _westernEdgeX = _southWestDown.x;
+            _northernEdgeZ = _northEastUp.z;
+            _southernEdgeZ = _southWestDown.z;
+            _floorY = _southWestDown.y;
+            _ceilingY = _northEastUp.y;
 
 
 
@@ -88,12 +90,49 @@ namespace GameLibrary.Map
 
         }
 
+        #region public interface methods
+        public void AddAdjacency(RoomAdjacency a)
+        {
+            if(_adjacentRooms == null) _adjacentRooms = new List<RoomAdjacency>();
+
+            if (!_adjacentRooms.Contains(a))
+                _adjacentRooms.Add(a);
+        }
+        public void AddConnection(Room r)
+        {
+            if(_connectedRooms == null) _connectedRooms = new List<Room>();
+            if (!_connectedRooms.Contains(r))
+                _connectedRooms.Add(r);
+        }
+        public void AddTeleporter(Teleporter t, bool outbound)
+        {
+            if (outbound)
+            {
+                if (_teleportersOut == null) _teleportersOut = new List<Teleporter>();
+                _teleportersOut.Add(t);
+            }
+            else
+            {
+                if (_teleportersIn == null) _teleportersIn = new List<Teleporter>();
+                _teleportersIn.Add(t);
+            }
+        }
         public void DrawRoom()
         {
             DrawFloor();
             DrawWalls();
             DrawColumns();
             _isDrawn = true;
+        }
+        public List<RoomAdjacency> GetAdjacencies()
+        {
+            if (_adjacentRooms == null) _adjacentRooms = new List<RoomAdjacency>();
+            return _adjacentRooms;
+        }
+        public List<Room> GetConnections()
+        {
+            if (_connectedRooms == null) _connectedRooms = new List<Room>();
+            return _connectedRooms;
         }
         public float GetEdge(Direction direction)
         {
@@ -103,17 +142,44 @@ namespace GameLibrary.Map
             if (direction == Direction.WEST) return _westernEdgeX;
             return 0;
         }
+        public bool IsDrawn()
+        {
+            return _isDrawn;
+        }
+        #endregion public methods
+
+
+        #region comparison methods
+        public override bool Equals(object obj)
+        {
+            if (obj == null) return false;
+            Room objAsRoom = obj as Room;
+            if (objAsRoom == null) return false;
+            else return Equals(objAsRoom);
+        }
+        public bool Equals(Room r)
+        {
+            if (r == null) return false;
+            return (id.Equals(r.id));
+        }
+        public override int GetHashCode()
+        {
+            return id;
+        }
+        #endregion comparison methods
+
+
 
         private void DrawFloor()
         {
             bool offset = false;
-            for (float x = _southEastUp.x; x <= _northWestDown.x; x += _tileWidth)
+            for (float x = _westernEdgeX; x <= _easternEdgeX; x += _tileWidth)
             {
-                for (float z = _northWestDown.z; z <= _southEastUp.z; z += _tileDepth)
+                for (float z = _southernEdgeZ; z <= _northernEdgeZ; z += _tileDepth)
                 {
                     float zOffset = 0;
                     if (offset) zOffset = _tileDepth / 2;
-                    Transform thisTile = SetTile(new Vector3(x, _northWestDown.y, z - zOffset));
+                    Transform thisTile = SetTile(new Vector3(x, _floorY, z - zOffset));
                     SetColor(thisTile);
                 }
                 offset = (offset) ? false : true;
@@ -122,10 +188,7 @@ namespace GameLibrary.Map
         }
         protected void DrawWall(Vector3 begin, Vector3 end, Direction direction)
         {
-            //float xCenterOffset = _brickWidth / 2;
             float yCenterOffset = _brickHeight / 2;
-            //float zCenterOffset = _brickWidth / 2;
-
             bool brickOffset = false; // sets the alternating brick pattern
 
             for (float yPosition = begin.y + yCenterOffset; yPosition < end.y + yCenterOffset; yPosition += _brickHeight)
@@ -212,19 +275,18 @@ namespace GameLibrary.Map
 
         protected virtual void DrawWalls()
         {
-            Vector3 swDown = new Vector3(_westernEdgeX, _northWestDown.y, _southernEdgeZ);
-            Vector3 nwUp = new Vector3(_westernEdgeX, _southEastUp.y, _northernEdgeZ);
-            Vector3 nwDown = new Vector3(_westernEdgeX, _northWestDown.y, _northernEdgeZ);
-            Vector3 neUp = new Vector3(_easternEdgeX, _southEastUp.y, _northernEdgeZ);
-            Vector3 seDown = new Vector3(_easternEdgeX, _northWestDown.y, _southernEdgeZ);
-            Vector3 seUp = new Vector3(_easternEdgeX, _southEastUp.y, _southernEdgeZ);
+            Vector3 nwUp = new Vector3(_westernEdgeX, _ceilingY, _northernEdgeZ);
+            Vector3 nwDown = new Vector3(_westernEdgeX, _floorY, _northernEdgeZ);
+            Vector3 seDown = new Vector3(_easternEdgeX, _floorY, _southernEdgeZ);
+            Vector3 seUp = new Vector3(_easternEdgeX, _ceilingY, _southernEdgeZ);
+
 
 
 
 
             // draw west wall; SW -> NW
             if (_adjacentRooms == null || _adjacentRooms.Count == 0)
-                DrawWall(swDown, nwUp, Direction.NORTH); // just draw the wall from corner to corner
+                DrawWall(_southWestDown, nwUp, Direction.NORTH); // just draw the wall from corner to corner
             else
             {
                 List<float> wallPoints = new List<float>();
@@ -241,7 +303,7 @@ namespace GameLibrary.Map
                 if (wallPoints.Count > 2) wallPoints.Sort(); // prevents going out of order
                 for (int j = 0; j < wallPoints.Count; j += 2) // take the wall points in pairs
                 {
-                    Vector3 begin = new Vector3(_westernEdgeX, swDown.y, wallPoints[j]);
+                    Vector3 begin = new Vector3(_westernEdgeX, _floorY, wallPoints[j]);
                     Vector3 end = new Vector3(_westernEdgeX, nwUp.y, wallPoints[j + 1]);
                     DrawWall(begin, end, Direction.NORTH);
                 }
@@ -250,7 +312,7 @@ namespace GameLibrary.Map
 
             // draw north wall; NW -> NE
             if (_adjacentRooms == null || _adjacentRooms.Count == 0)
-                DrawWall(nwDown, neUp, Direction.EAST); // just draw the wall from corner to corner
+                DrawWall(nwDown, _northEastUp, Direction.EAST); // just draw the wall from corner to corner
             else
             {
                 List<float> wallPoints = new List<float>();
@@ -267,15 +329,15 @@ namespace GameLibrary.Map
                 if (wallPoints.Count > 2) wallPoints.Sort(); // prevents going out of order
                 for(int j = 0; j < wallPoints.Count; j+=2) // take the wall points in pairs
                 {
-                    Vector3 begin = new Vector3(wallPoints[j], nwDown.y, _northernEdgeZ);
-                    Vector3 end = new Vector3(wallPoints[j+1], neUp.y, _northernEdgeZ);
+                    Vector3 begin = new Vector3(wallPoints[j], _floorY, _northernEdgeZ);
+                    Vector3 end = new Vector3(wallPoints[j+1], _ceilingY, _northernEdgeZ);
                     DrawWall(begin, end, Direction.EAST);
                 }
             }
 
             // draw east wall; SE -> NE
             if (_adjacentRooms == null || _adjacentRooms.Count == 0)
-                DrawWall(seDown, neUp, Direction.NORTH); // just draw the wall from corner to corner
+                DrawWall(seDown, _northEastUp, Direction.NORTH); // just draw the wall from corner to corner
             else
             {
                 List<float> wallPoints = new List<float>();
@@ -292,15 +354,15 @@ namespace GameLibrary.Map
                 if (wallPoints.Count > 2) wallPoints.Sort(); // prevents going out of order
                 for (int j = 0; j < wallPoints.Count; j += 2) // take the wall points in pairs
                 {
-                    Vector3 begin = new Vector3(_easternEdgeX, seDown.y, wallPoints[j]);
-                    Vector3 end = new Vector3(_easternEdgeX, neUp.y, wallPoints[j + 1]);
+                    Vector3 begin = new Vector3(_easternEdgeX, _floorY, wallPoints[j]);
+                    Vector3 end = new Vector3(_easternEdgeX, _ceilingY, wallPoints[j + 1]);
                     DrawWall(begin, end, Direction.NORTH);
                 }
             }
 
             // draw south wall; SW -> SE
             if (_adjacentRooms == null || _adjacentRooms.Count == 0)
-                DrawWall(swDown, seUp, Direction.EAST); // just draw the wall from corner to corner
+                DrawWall(_southWestDown, seUp, Direction.EAST); // just draw the wall from corner to corner
             else
             {
                 List<float> wallPoints = new List<float>();
@@ -317,54 +379,12 @@ namespace GameLibrary.Map
                 if (wallPoints.Count > 2) wallPoints.Sort(); // prevents going out of order
                 for (int j = 0; j < wallPoints.Count; j += 2) // take the wall points in pairs
                 {
-                    Vector3 begin = new Vector3(wallPoints[j], swDown.y, _southernEdgeZ);
+                    Vector3 begin = new Vector3(wallPoints[j], _floorY, _southernEdgeZ);
                     Vector3 end = new Vector3(wallPoints[j + 1], seUp.y, _southernEdgeZ);
                     DrawWall(begin, end, Direction.EAST);
                 }
             }
         }
-
-
-        //private void DrawWalls()
-        //{
-        //    bool offset = false;
-        //    for (float y = _northWestDown.y + _tileHeight + (_brickHeight / 2); y <= _southEastUp.y; y += _brickHeight)
-        //    {
-        //        // go around the perimeter
-
-        //        // build the north wall at this level, going west to east
-        //        for (float x = _southEastUp.x + _brickWidth; x <= _northWestDown.x + _brickWidth; x += _brickDepth)
-        //        {
-        //            float xOffset = 0;
-        //            if (offset) xOffset = _brickDepth / 2;
-        //            Transform thisBrick = SetBrick(new Vector3(x + xOffset, y, _southEastUp.z - (_brickWidth / 2)), Quaternion.Euler(0, 0, -90));
-        //        }
-        //        // build the east wall at this level, going north to south
-        //        for (float z = _southEastUp.z - (_brickDepth / 2); z >= _northWestDown.z + (_brickDepth / 2); z -= _brickDepth)
-        //        {
-        //            float zOffset = 0;
-        //            if (offset) zOffset = _brickDepth / 2;
-        //            Transform thisBrick = SetBrick(new Vector3(_northWestDown.x + (_brickWidth / 2), y, z - zOffset), Quaternion.Euler(-90, 0, 0));
-        //        }
-        //        // build the south wall at this level, going east to west
-        //        for (float x = _northWestDown.x; x >= _southEastUp.x; x -= _brickDepth)
-        //        {
-        //            float xOffset = 0;
-        //            if (offset) xOffset = _brickDepth / 2;
-        //            Transform thisBrick = SetBrick(new Vector3(x - xOffset, y, _northWestDown.z - (_brickWidth / 2)), Quaternion.Euler(0, 0, -90));
-        //        }
-        //        // build the west wall at this level, going south to north
-        //        for (float z = _northWestDown.z; z <= _southEastUp.z - _brickWidth; z += _brickDepth)
-        //        {
-        //            float zOffset = 0;
-        //            if (offset) zOffset = _brickDepth / 2;
-        //            Transform thisBrick = SetBrick(new Vector3(_southEastUp.x + (_brickWidth / 2), y, z + zOffset), Quaternion.Euler(90, 0, 0));
-
-        //        }
-
-        //        offset = (offset) ? false : true;
-        //    }
-        //}
 
         private void DrawColumns()
         {

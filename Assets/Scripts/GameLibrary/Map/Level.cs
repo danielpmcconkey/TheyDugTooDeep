@@ -13,7 +13,7 @@ namespace GameLibrary.Map
         private Vector3 _startingPoint;
         private MapSquare[] _grid;
         private int _numMainRooms;
-
+        // todo: implement a level floor Y, instead of just assuming 0
 
         public Level(Vector3 startingPoint)
         {
@@ -23,6 +23,7 @@ namespace GameLibrary.Map
             _numMainRooms = RNG.getRandomInt(GlobalMapParameters.minRoomsPerFloor, GlobalMapParameters.maxRoomsPerFloor);
         }
 
+        #region // public interface methods
         public bool CreateRooms()
         {
             int tileSet = 1; // todo: do something about tilesets
@@ -40,7 +41,7 @@ namespace GameLibrary.Map
              * variables are misnamed.
              * todo: fix nwdown and swup
              * *******************************/
-            Room starterRoom = new Room(0, new Vector3(eastEdge, 0, southEdge), new Vector3(westEdge, GlobalMapParameters.roomHeight, northEdge), tileSet);
+            Room starterRoom = new Room(0, new Vector3(westEdge, 0, southEdge), new Vector3(eastEdge, GlobalMapParameters.roomHeight, northEdge), tileSet);
             PopulateGridSquares(starterRoom);
             _rooms.Add(0, starterRoom);
 
@@ -52,6 +53,7 @@ namespace GameLibrary.Map
             }
             CreateCorridors(tileSet);
             CreateRightAngleConnections(tileSet);
+            CreateTeleportersForClosedLoops();
 
             for (int i = 0; i < _rooms.Count; i++)
             {
@@ -61,6 +63,55 @@ namespace GameLibrary.Map
             return true;
             
 
+        }
+        #endregion // public methods
+
+
+        #region room creation methods
+        private void CreateCorridors(int tileSet)
+        {
+            for (int i = 0; i < _numMainRooms; i++) // can't foreach the list because you add to it while you're doing it
+            {
+                if (_rooms[i].GetAdjacencies().Count == 0)
+                {
+                    RoomConnection connection = FindRoomToConnect(_rooms[i], tileSet);
+                    if (connection != null)
+                    {
+                        int id = _rooms.Count;
+                        connection.corridor.id = id;
+                        _rooms.Add(id, connection.corridor);
+                        connection.starterRoom.AddAdjacency(new RoomAdjacency()
+                        {
+                            room = connection.corridor,
+                            adjacentWall = connection.corridor.direction
+                        });
+                        connection.starterRoom.AddConnection(connection.connectedRoom);
+                        connection.connectedRoom.AddAdjacency(new RoomAdjacency()
+                        {
+                            room = connection.corridor,
+                            adjacentWall = GetOppositeDirection(connection.corridor.direction)
+                        });
+                        connection.connectedRoom.AddConnection(connection.starterRoom);
+                    }
+                }
+            }
+            // try for a second connection where possible todo: DRY this code
+            for (int i = 0; i < _numMainRooms; i++) // can't foreach the list because you add to it while you're doing it
+            {
+                RoomConnection connection = FindRoomToConnect(_rooms[i], tileSet);
+                if (connection != null)
+                {
+                    int id = _rooms.Count;
+                    connection.corridor.id = id;
+                    _rooms.Add(id, connection.corridor);
+                    connection.starterRoom.AddAdjacency(new RoomAdjacency() { room = connection.corridor, adjacentWall = connection.corridor.direction });
+                    connection.connectedRoom.AddAdjacency(new RoomAdjacency()
+                    {
+                        room = connection.corridor,
+                        adjacentWall = GetOppositeDirection(connection.corridor.direction)
+                    });
+                }
+            }
         }
         private void CreateRightAngleConnections(int tileSet)
         {
@@ -149,8 +200,8 @@ namespace GameLibrary.Map
                             float cpWestEdge = cpCenterX - (GlobalMapParameters.rightAngleConnectorSize / 2);
                             Room centerPoint = new Room(
                                                 -1,
-                                                new Vector3(cpEastEdge, 0, cpSouthEdge),
-                                                new Vector3(cpWestEdge, GlobalMapParameters.roomHeight, cpNorthEdge),
+                                                new Vector3(cpWestEdge, 0, cpSouthEdge),
+                                                new Vector3(cpEastEdge, GlobalMapParameters.roomHeight, cpNorthEdge),
                                                 tileSet
                                                 );
                             if (IsThereSpaceForTheRoom(centerPoint, true))
@@ -162,8 +213,8 @@ namespace GameLibrary.Map
                                 float zLegWestEdge = cpCenterX - (GlobalMapParameters.corridorWidth / 2);
                                 Corridor zLeg = new Corridor(
                                                 -1,
-                                                new Vector3(zLegEastEdge, 0, zLegSouthEdge),
-                                                new Vector3(zLegWestEdge, GlobalMapParameters.roomHeight, zLegNorthEdge),
+                                                new Vector3(zLegWestEdge, 0, zLegSouthEdge),
+                                                new Vector3(zLegEastEdge, GlobalMapParameters.roomHeight, zLegNorthEdge),
                                                 tileSet,
                                                 Direction.NORTH
                                                 );
@@ -176,8 +227,8 @@ namespace GameLibrary.Map
                                     float xLegSouthEdge = cpCenterZ - (GlobalMapParameters.corridorWidth / 2);
                                     Corridor xLeg = new Corridor(
                                                     -1,
-                                                    new Vector3(xLegEastEdge, 0, xLegSouthEdge),
-                                                    new Vector3(xLegWestEdge, GlobalMapParameters.roomHeight, xLegNorthEdge),
+                                                    new Vector3(xLegWestEdge, 0, xLegSouthEdge),
+                                                    new Vector3(xLegEastEdge, GlobalMapParameters.roomHeight, xLegNorthEdge),
                                                     tileSet,
                                                     Direction.EAST
                                                     );
@@ -189,17 +240,17 @@ namespace GameLibrary.Map
                                         PopulateGridSquares(xLeg);
 
                                         // room adjacencies
-                                        centerPoint.adjacentRooms.Add(
+                                        centerPoint.AddAdjacency(
                                             new RoomAdjacency() { room = zLeg, adjacentWall = (sourceZ > targetZ) ? Direction.NORTH : Direction.SOUTH }
                                             );
-                                        centerPoint.adjacentRooms.Add(
+                                        centerPoint.AddAdjacency(
                                             new RoomAdjacency() { room = xLeg, adjacentWall = (sourceX > targetX) ? Direction.WEST : Direction.EAST }
                                             );
 
-                                        source.adjacentRooms.Add(
+                                        source.AddAdjacency(
                                             new RoomAdjacency() { room = zLeg, adjacentWall = (sourceZ > targetZ) ? Direction.SOUTH : Direction.NORTH }
                                             );
-                                        target.adjacentRooms.Add(
+                                        target.AddAdjacency(
                                             new RoomAdjacency() { room = xLeg, adjacentWall = (sourceX > targetX) ? Direction.EAST : Direction.WEST }
                                             );
                                         // add target adjacency for zleg
@@ -211,8 +262,8 @@ namespace GameLibrary.Map
                                         xLeg.id = _rooms.Count;
                                         _rooms.Add(_rooms.Count, xLeg);
                                         // add the room connections
-                                        source.connectedRooms.Add(target);
-                                        target.connectedRooms.Add(source);
+                                        source.AddConnection(target);
+                                        target.AddConnection(source);
 
                                     } // end IsThereSpaceForTheRoom(xLeg)
                                 } // end IsThereSpaceForTheRoom(zLeg)
@@ -225,49 +276,67 @@ namespace GameLibrary.Map
                     
             } // end for i loop
         }
-        private void CreateCorridors(int tileSet)
+        private Room CreateRoom(int id, int tileSet)
         {
-            for (int i = 0; i < _numMainRooms; i++) // can't foreach the list because you add to it while you're doing it
-            {
-                if (_rooms[i].adjacentRooms.Count == 0)
-                {
-                    RoomConnection connection = FindRoomToConnect(_rooms[i], tileSet);
-                    if (connection != null)
-                    {
-                        int id = _rooms.Count;
-                        connection.corridor.id = id;
-                        _rooms.Add(id, connection.corridor);
-                        connection.starterRoom.adjacentRooms.Add(new RoomAdjacency() {
-                            room = connection.corridor, adjacentWall = connection.corridor.direction });
-                        connection.starterRoom.connectedRooms.Add(connection.connectedRoom);
-                        connection.connectedRoom.adjacentRooms.Add(new RoomAdjacency()
-                        {
-                            room = connection.corridor,
-                            adjacentWall = GetOppositeDirection(connection.corridor.direction)
-                        });
-                        connection.connectedRoom.connectedRooms.Add(connection.starterRoom);
-                    }
-                }
-            }
-            // try for a second connection where possible todo: DRY this code
-            for (int i = 0; i < _numMainRooms; i++) // can't foreach the list because you add to it while you're doing it
-            {
-                RoomConnection connection = FindRoomToConnect(_rooms[i], tileSet);
-                if (connection != null)
-                {
-                    int id = _rooms.Count;
-                    connection.corridor.id = id;
-                    _rooms.Add(id, connection.corridor);
-                    connection.starterRoom.adjacentRooms.Add(new RoomAdjacency() { room = connection.corridor, adjacentWall = connection.corridor.direction });
-                    connection.connectedRoom.adjacentRooms.Add(new RoomAdjacency()
-                    {
-                        room = connection.corridor,
-                        adjacentWall = GetOppositeDirection(connection.corridor.direction)
-                    });
-                }
-            }
-        }
+            Room room = null;
+            bool roomPlaced = false;
 
+            while (!roomPlaced)
+            {
+                int roomWidth = RNG.getRandomInt(GlobalMapParameters.minRoomSize, GlobalMapParameters.maxRoomSize); // distance along x axis
+                int roomDepth = RNG.getRandomInt(GlobalMapParameters.minRoomSize, GlobalMapParameters.maxRoomSize); // distance along z axis
+
+
+                float southEdge = RNG.getRandomInt(0 - GlobalMapParameters.mapSize, GlobalMapParameters.mapSize - roomDepth);
+                float westEdge = RNG.getRandomInt(0 - GlobalMapParameters.mapSize, GlobalMapParameters.mapSize - roomWidth);
+                float northEdge = southEdge + roomDepth;
+                float eastEdge = westEdge + roomWidth;
+
+                room = new Room(
+                    id,
+                    new Vector3(westEdge, 0, southEdge),
+                    new Vector3(eastEdge, GlobalMapParameters.roomHeight, northEdge),
+                    tileSet
+                    );
+
+                if (IsThereSpaceForTheRoom(room, true)) roomPlaced = true;
+            }
+
+
+            PopulateGridSquares(room);
+            return room;
+
+        }
+        private void CreateTeleportersForClosedLoops()
+        {
+            /*********************************************************
+             * a closed loop is a group of rooms (or just a room)
+             * that are connected to each other, but not the rest of
+             * the level.
+             * ******************************************************/
+            List<List<int>> closedLoops = GetClosedLoops();
+            /*********************************************************
+             * each closed loop needs to connect to one of the others
+             * so cycle through the loops and have each connect
+             * to the next in the list. Have the last connect to the
+             * first in the list. shazam? shaZAM!
+             * ******************************************************/
+            for (int i = 0; i < closedLoops.Count; i++)
+            {
+                List<int> sourceLoop = closedLoops[i];
+                List<int> destinationLoop = closedLoops[(i < closedLoops.Count - 1) ? i + 1 : 0];
+                Room r1 = _rooms[sourceLoop[sourceLoop.Count - 1]]; // last room in source loop
+                Room r2 = _rooms[destinationLoop[0]]; // first room in destination loop
+                // todo: set teleporters in rooms more intelligently 
+                Vector3 source = new Vector3(r1.GetEdge(Direction.EAST - 1), 0, r1.GetEdge(Direction.NORTH - 1));
+                Vector3 destination = new Vector3(r2.GetEdge(Direction.WEST + 1), 0, r1.GetEdge(Direction.SOUTH + 1));
+                Teleporter t = new Teleporter() { source = source, destination = destination, active = false };
+                r1.AddTeleporter(t, true);
+                r2.AddTeleporter(t, false);
+            }
+
+
+        }
         private RoomConnection FindRoomToConnect(Room room, int tileSet)
         {
             bool connectionFound = false;
@@ -295,9 +364,9 @@ namespace GameLibrary.Map
                 {
                     Room candidate = roomEntry.Value;
                     bool alreadyConnected = false;
-                    if (room.connectedRooms != null)
+                    if (room.GetConnections() != null)
                     {
-                        foreach (Room alreadyConnectedRoom in room.connectedRooms)
+                        foreach (Room alreadyConnectedRoom in room.GetConnections())
                             if (roomEntry.Key == alreadyConnectedRoom.id) alreadyConnected = true;
                     }
                     if (roomEntry.Key != room.id && !alreadyConnected) // it's cheating to match on itself or a room already connected
@@ -362,8 +431,8 @@ namespace GameLibrary.Map
                                             }
                                             Corridor corridorCandidate = new Corridor(
                                                 -1,
-                                                new Vector3(eastEdge, 0, southEdge),
-                                                new Vector3(westEdge, GlobalMapParameters.roomHeight, northEdge),
+                                                new Vector3(westEdge, 0, southEdge),
+                                                new Vector3(eastEdge, GlobalMapParameters.roomHeight, northEdge),
                                                 tileSet,
                                                 primaryDirection
                                                 );
@@ -395,53 +464,66 @@ namespace GameLibrary.Map
             }
             return null;
         }
-
-        private Room CreateRoom(int id, int tileSet)
+        private List<List<int>> GetClosedLoops()
         {
-            Room room = null;
-            bool roomPlaced = false;
-
-            while (!roomPlaced)
+            List<List<int>> closedLoops = new List<List<int>>();
+            for (int i = 0; i < _numMainRooms; i++)
             {
-                int roomWidth = RNG.getRandomInt(GlobalMapParameters.minRoomSize, GlobalMapParameters.maxRoomSize); // distance along x axis
-                int roomDepth = RNG.getRandomInt(GlobalMapParameters.minRoomSize, GlobalMapParameters.maxRoomSize); // distance along z axis
-
-
-                float southEdge = RNG.getRandomInt(0 - GlobalMapParameters.mapSize, GlobalMapParameters.mapSize - roomDepth);
-                float westEdge = RNG.getRandomInt(0 - GlobalMapParameters.mapSize, GlobalMapParameters.mapSize - roomWidth);
-                float northEdge = southEdge + roomDepth;
-                float eastEdge = westEdge + roomWidth;
-
-                room = new Room(
-                    id,
-                    new Vector3(eastEdge, 0, southEdge),
-                    new Vector3(westEdge, GlobalMapParameters.roomHeight, northEdge),
-                    tileSet
-                    );
-
-                if (IsThereSpaceForTheRoom(room, true)) roomPlaced = true;
+                List<int> connectedRoomList = new List<int>();
+                connectedRoomList.Add(_rooms[i].id);
+                connectedRoomList = GetConnectedRoomIdsForRoom(_rooms[i], connectedRoomList);
+                if (connectedRoomList.Count == _numMainRooms) // we have no closed loops
+                    return null;
+                /* ******************************************
+                 * before adding, make sure that this closed
+                 * loop doesn't already exist. A loop of 
+                 * 5,2,4 is the same as a loop of 2,4,5.
+                 * ******************************************/
+                connectedRoomList.Sort();
+                bool duplicate = false;
+                if (closedLoops.Count > 0) // if it *is* the first loop, go ahead and skip all logic and add
+                {
+                    foreach (List<int> loop in closedLoops)
+                    {
+                        if (loop.Count == connectedRoomList.Count) // if the count *is* different, you can skip the check
+                        {
+                            bool thisLoopMatches = true;
+                            for (int j = 0; j < loop.Count; j++)
+                            {
+                                if (loop[j] != connectedRoomList[j]) // this is not the same loop
+                                {
+                                    thisLoopMatches = false;
+                                    break;
+                                }
+                            }
+                            if (thisLoopMatches) duplicate = true;
+                        }
+                    }
+                }
+                if (!duplicate) closedLoops.Add(connectedRoomList);
             }
-
-
-            PopulateGridSquares(room);
-            return room;
-
+            return closedLoops;
         }
-
-
-        private Direction GetOppositeDirection(Direction direction)
+        private List<int> GetConnectedRoomIdsForRoom(Room r, List<int> connectedRoomList)
         {
-            return (Direction)(((int)direction + 2) % 4);
-        }
-        private void InitializeGrid()
-        {
-            int numSquares = ((GlobalMapParameters.mapSize * 2) + 1) * ((GlobalMapParameters.mapSize * 2) + 1);
-            _grid = new MapSquare[numSquares];
-            
-            for(int i = 0; i < numSquares; ++i)
+            /********************************************************************
+             * This is a recursive function to get a list of all the rooms 
+             * a room is connected to, all the rooms those rooms are
+             * connected to, etc.
+             * *****************************************************************/
+            foreach (Room r2 in r.GetConnections())
             {
-                _grid[i] = new MapSquare() { hasLand = false, isReavealed = false };
+                if (!connectedRoomList.Contains(r2.id))
+                {
+                    connectedRoomList.Add(r2.id);
+                    List<int> childList = GetConnectedRoomIdsForRoom(r2, connectedRoomList);
+                    foreach (int i in childList)
+                    {
+                        if (!connectedRoomList.Contains(i)) connectedRoomList.Add(i);
+                    }
+                }
             }
+            return connectedRoomList;
         }
         private int GetGridIndexFromXY(float x, float y)
         {
@@ -481,25 +563,18 @@ namespace GameLibrary.Map
             int index = (rowNumber * totalRows) + GlobalMapParameters.mapSize + (int)x;
             return index;
         }
-        private void PopulateGridSquares(Room room)
+        private Direction GetOppositeDirection(Direction direction)
         {
-            int xMin = (int)room.GetEdge(Direction.WEST);
-            int xMax = (int)room.GetEdge(Direction.EAST);
-            int yMin = (int)room.GetEdge(Direction.SOUTH);
-            int yMax = (int)room.GetEdge(Direction.NORTH);
-            for (int i = xMin; i < xMax + 1; i++)
+            return (Direction)(((int)direction + 2) % 4);
+        }
+        private void InitializeGrid()
+        {
+            int numSquares = ((GlobalMapParameters.mapSize * 2) + 1) * ((GlobalMapParameters.mapSize * 2) + 1);
+            _grid = new MapSquare[numSquares];
+            
+            for(int i = 0; i < numSquares; ++i)
             {
-                for(int j = yMin; j < yMax + 1; j++)
-                {
-                    try
-                    {
-                        _grid[GetGridIndexFromXY(i, j)] = new MapSquare() { hasLand = true, isReavealed = false };
-                    }
-                    catch
-                    {
-                        Debug.LogError(string.Format("failed at space ({0}, {1})", i, j));
-                    }
-                }
+                _grid[i] = new MapSquare() { hasLand = false, isReavealed = false };
             }
         }
         private bool IsThereSpaceForTheRoom(Room room, bool padRoom = false)
@@ -541,5 +616,27 @@ namespace GameLibrary.Map
             }
             return true;
         }
+        private void PopulateGridSquares(Room room)
+        {
+            int xMin = (int)room.GetEdge(Direction.WEST);
+            int xMax = (int)room.GetEdge(Direction.EAST);
+            int yMin = (int)room.GetEdge(Direction.SOUTH);
+            int yMax = (int)room.GetEdge(Direction.NORTH);
+            for (int i = xMin; i < xMax + 1; i++)
+            {
+                for(int j = yMin; j < yMax + 1; j++)
+                {
+                    try
+                    {
+                        _grid[GetGridIndexFromXY(i, j)] = new MapSquare() { hasLand = true, isReavealed = false };
+                    }
+                    catch
+                    {
+                        Debug.LogError(string.Format("failed at space ({0}, {1})", i, j));
+                    }
+                }
+            }
+        }
+        #endregion room creation methods
     }
 }
