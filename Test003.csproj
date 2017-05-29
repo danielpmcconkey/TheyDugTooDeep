@@ -81,7 +81,10 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Assets\Scripts\CharacterCollisions.cs" />
     <Compile Include="Assets\Scripts\CreateMap.cs" />
+    <Compile Include="Assets\Scripts\DoorAnimator.cs" />
+    <Compile Include="Assets\Scripts\DoorCollisionTrigger.cs" />
     <Compile Include="Assets\Scripts\GameLibrary\Helpers\Direction.cs" />
     <Compile Include="Assets\Scripts\GameLibrary\Helpers\RNG.cs" />
     <Compile Include="Assets\Scripts\GameLibrary\Map\Corridor.cs" />
@@ -94,11 +97,18 @@
     <Compile Include="Assets\Scripts\GameLibrary\Map\RoomAdjacency.cs" />
     <Compile Include="Assets\Scripts\GameLibrary\Map\RoomConnection.cs" />
     <Compile Include="Assets\Scripts\GameLibrary\Map\Teleporter.cs" />
+    <Compile Include="Assets\Scripts\PlayerController.cs" />
+    <Compile Include="Assets\Scripts\ThirdPersonCamera.cs" />
+    <Compile Include="Assets\Scripts\TorchGlow.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Assets\Standard Assets\Characters\ThirdPersonCharacter\ThirdPersonCharacterGuidelines.txt" />
+    <None Include="Assets\Materials\ToonShader.shader" />
     <None Include="Assets\Standard Assets\CrossPlatformInput\CrossPlatformInputGuidelines.txt" />
     <None Include="Assets\Standard Assets\Fonts\OpenSans\License!.txt" />
+    <None Include="Assets\Standard Assets\ParticleSystems\ParticleSystemsGuidelines.txt" />
+    <None Include="Assets\Standard Assets\ParticleSystems\Shaders\PriorityParticleAdd.shader" />
+    <None Include="Assets\Standard Assets\ParticleSystems\Shaders\PriorityParticleAddSoft.shader" />
+    <None Include="Assets\Standard Assets\ParticleSystems\Shaders\PriorityParticleAlpha.shader" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="GenerateTargetFrameworkMonikerAttribute" />
