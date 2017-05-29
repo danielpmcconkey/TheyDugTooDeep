@@ -10,9 +10,6 @@ namespace GameLibrary.Map
     {
         #region public members
         public int id;
-        //public List<RoomAdjacency> adjacentRooms { get { return _adjacentRooms; } set { _adjacentRooms = value; } }
-        //public List<Room> connectedRooms { get { return _connectedRooms; } }
-        //public bool isDrawn { get { return _isDrawn; } set { _isDrawn = value; } }
         #endregion public members
 
         #region geographic members
@@ -30,32 +27,35 @@ namespace GameLibrary.Map
         private float _tileWidth;           // distance along the x axis
         private float _tileDepth;           // distance along the z axis
         private float _tileHeight;          // distance along the y axis
-        private float _tileColorR;
-        private float _tileColorG;
-        private float _tileColorB;
 
         private float _brickWidth;           // distance along the x axis
         private float _brickDepth;           // distance along the z axis
         private float _brickHeight;          // distance along the y axis
-        private float _brickColorR;
-        private float _brickColorG;
-        private float _brickColorB;
+        private Color _baseColor;
         #endregion skin members
 
 
         private List<RoomAdjacency> _adjacentRooms;
         private List<Room> _connectedRooms;
         private bool _isDrawn;
+        private bool _isRendered = false;
         private List<Teleporter> _teleportersOut;
         private List<Teleporter> _teleportersIn;
+        private List<Vector3> _torches;
+        private List<Transform> _instantiatedObjects;
+        private Dictionary<string, Transform> _doors;
+        private Transform _container;   // the base container for all objects in this room
 
 
 
-        public Room(int id, Vector3 southWestDown, Vector3 northEastUp, int tileSet)
+
+
+        public Room(int id, Vector3 southWestDown, Vector3 northEastUp, int tileSet, Color baseColor)
         {
             this.id = id;
 
             _isDrawn = false;
+            _instantiatedObjects = new List<Transform>();
 
             _southWestDown = southWestDown;
             _northEastUp = northEastUp;
@@ -67,6 +67,8 @@ namespace GameLibrary.Map
             _floorY = _southWestDown.y;
             _ceilingY = _northEastUp.y;
 
+            _baseColor = baseColor;
+
 
 
             switch (tileSet)
@@ -76,18 +78,11 @@ namespace GameLibrary.Map
                     _tileWidth = GlobalBuildingMaterials.tile001Width;
                     _tileDepth = GlobalBuildingMaterials.tile001Depth;
                     _tileHeight = GlobalBuildingMaterials.tile001Height;
-                    _tileColorR = GlobalBuildingMaterials.tile001ColorR;
-                    _tileColorG = GlobalBuildingMaterials.tile001ColorG;
-                    _tileColorB = GlobalBuildingMaterials.tile001ColorB;
                     _brickWidth = GlobalBuildingMaterials.brick001Width;
                     _brickDepth = GlobalBuildingMaterials.brick001Depth;
                     _brickHeight = GlobalBuildingMaterials.brick001Height;
-                    _brickColorR = GlobalBuildingMaterials.brick001ColorR;
-                    _brickColorG = GlobalBuildingMaterials.brick001ColorG;
-                    _brickColorB = GlobalBuildingMaterials.brick001ColorB;
                     break;
             }
-
         }
 
         #region public interface methods
@@ -104,6 +99,14 @@ namespace GameLibrary.Map
             if (!_connectedRooms.Contains(r))
                 _connectedRooms.Add(r);
         }
+        public void AddDoor(Transform door)
+        {
+            if (_doors == null) _doors = new Dictionary<string, Transform>();
+            if (!_doors.ContainsKey(door.name))
+            {
+                _doors.Add(door.name, door);
+            }
+        }
         public void AddTeleporter(Teleporter t, bool outbound)
         {
             if (outbound)
@@ -117,12 +120,44 @@ namespace GameLibrary.Map
                 _teleportersIn.Add(t);
             }
         }
-        public void DrawRoom()
+        public void AddTorch(Vector3 v)
         {
-            DrawFloor();
-            DrawWalls();
-            DrawColumns();
+            if (_torches == null) _torches = new List<Vector3>();
+            _torches.Add(v);
+        }
+        public virtual void DrawRoom()
+        {
+            _container = new GameObject().transform;
+            _container.name = string.Format("Room {0} container", id); // putting this here because rooms are created to see if they fit and then quickly destroyed
+
+            Transform floorContainer = DrawFloor();
+            floorContainer.parent = _container;
+
+            Transform wallsContainer = DrawWalls();
+            if (wallsContainer != null) wallsContainer.parent = _container;
+
+            Transform columnsContainer = DrawColumns();
+            if(columnsContainer != null) columnsContainer.parent = _container;
+
+            Transform torchesContainer = DrawTorches();
+            if (torchesContainer != null) torchesContainer.parent = _container;
+
+            Transform roomEntryTrigger = AddRoomEntryTrigger();
+            roomEntryTrigger.parent = _container;
+
             _isDrawn = true;
+            _isRendered = true;
+        }
+        public virtual void EraseRoom()
+        {
+            if(_container != null) UnityEngine.Object.Destroy(_container.gameObject);
+            foreach (Transform t in _instantiatedObjects)
+            {
+                if (t.gameObject != null) UnityEngine.Object.Destroy(t.gameObject);
+            }
+            _instantiatedObjects = new List<Transform>();
+            _isDrawn = false;
+            _isRendered = false;
         }
         public List<RoomAdjacency> GetAdjacencies()
         {
@@ -134,6 +169,10 @@ namespace GameLibrary.Map
             if (_connectedRooms == null) _connectedRooms = new List<Room>();
             return _connectedRooms;
         }
+        public Transform GetContainer()
+        {
+            return _container;
+        }
         public float GetEdge(Direction direction)
         {
             if (direction == Direction.NORTH) return _northernEdgeZ;
@@ -142,9 +181,40 @@ namespace GameLibrary.Map
             if (direction == Direction.WEST) return _westernEdgeX;
             return 0;
         }
+        public bool IsCleared()
+        {
+            return true; // todo: hook IsCleared into actual enemy destruction
+        }
         public bool IsDrawn()
         {
             return _isDrawn;
+        }
+        public bool IsRendered()
+        {
+            return _isRendered;
+        }
+        public void LockDoors()
+        {
+            foreach (KeyValuePair<string, Transform> doorPair in _doors)
+            {
+                doorPair.Value.SendMessage("LockDoor");
+            }
+        }
+        
+        public void RenderRoomObjects(bool isActive)
+        {
+            foreach (Transform thing in _instantiatedObjects)
+            {
+                thing.gameObject.SetActive(isActive);
+            }
+            _isRendered = isActive;
+        }
+        public void UnlockDoors()
+        {
+            foreach (KeyValuePair<string, Transform> doorPair in _doors)
+            {
+                doorPair.Value.SendMessage("UnlockDoor");
+            }
         }
         #endregion public methods
 
@@ -168,10 +238,40 @@ namespace GameLibrary.Map
         }
         #endregion comparison methods
 
-
-
-        private void DrawFloor()
+        private Transform AddRoomEntryTrigger()
         {
+            Transform triggerContainer = new GameObject().transform;
+            triggerContainer.name = string.Format("Room {0} room trigger container", id);
+
+            float width = _easternEdgeX - _westernEdgeX;
+            float depth = _northernEdgeZ - _southernEdgeZ;
+            float height = _ceilingY - _floorY;
+            float x = _westernEdgeX + (width / 2);
+            float y = _floorY + (height / 2);
+            float z = _southernEdgeZ + (depth / 2);
+            Quaternion rotation = Quaternion.Euler(0, 0, 0);
+            Vector3 position = new Vector3(x, y, z);
+
+            Transform roomTriggerEmptyShell = GameObject.Instantiate(new GameObject(), position, rotation).transform;
+            roomTriggerEmptyShell.parent = triggerContainer;
+
+            roomTriggerEmptyShell.gameObject.AddComponent<BoxCollider>();
+            BoxCollider colliderTrigger = (BoxCollider)roomTriggerEmptyShell.GetComponent<Collider>();
+            
+            colliderTrigger.size = new Vector3(width, _ceilingY - _floorY, depth);
+            colliderTrigger.isTrigger = true;
+            colliderTrigger.name = string.Format("rigger collider for room ID:{0}", id);
+            colliderTrigger.tag = "RoomEntryTrigger";
+            
+
+
+            return triggerContainer;
+        }
+
+        private Transform DrawFloor()
+        {
+            Transform floorContainer = new GameObject().transform;
+            floorContainer.name = string.Format("Room {0} floor container", id);
             bool offset = false;
             for (float x = _westernEdgeX; x <= _easternEdgeX; x += _tileWidth)
             {
@@ -180,14 +280,32 @@ namespace GameLibrary.Map
                     float zOffset = 0;
                     if (offset) zOffset = _tileDepth / 2;
                     Transform thisTile = SetTile(new Vector3(x, _floorY, z - zOffset));
-                    SetColor(thisTile);
+                    thisTile.parent = floorContainer;
                 }
                 offset = (offset) ? false : true;
             }
-
+            return floorContainer;
         }
-        protected void DrawWall(Vector3 begin, Vector3 end, Direction direction)
+        protected Transform DrawWall(Vector3 begin, Vector3 end, Direction direction)
         {
+            Transform container = new GameObject().transform;
+            container.name = string.Format("Room {0} wall segment container", id);
+
+
+            //float widthX = (end.x - begin.x == 0) ? GlobalMapParameters.lightBlockerWidth : end.x - begin.x;
+            //float centerX = begin.x + (widthX / 2);
+            //float widthY = end.y - begin.y;
+            //float centerY = begin.y + (widthY / 2);
+            //float widthZ = (end.z - begin.z == 0) ? GlobalMapParameters.lightBlockerWidth : end.z - begin.z;
+            //float centerZ = begin.z + (widthZ / 2);
+            //Transform lightBlocker = GameObject.CreatePrimitive(PrimitiveType.Cube).transform;
+            //lightBlocker.parent = container;
+            //lightBlocker.position = new Vector3(centerX, centerY, centerZ);
+            //lightBlocker.localScale = new Vector3(widthX, widthY, widthZ);
+
+
+            
+
             float yCenterOffset = _brickHeight / 2;
             bool brickOffset = false; // sets the alternating brick pattern
 
@@ -208,6 +326,7 @@ namespace GameLibrary.Map
                                 float zCenterOffset = _brickDepth / 2; // you don't want the center of the brick on the beginnig line, you want the edge
                                 Vector3 brickPosition = new Vector3(xPosition, yPosition, begin.z + zCenterOffset + (i * _brickDepth));
                                 Transform thisBrick = SetBrick(brickPosition, Quaternion.Euler(90, 0, 0));
+                                thisBrick.parent = container;
                             }
                         }
                         else
@@ -215,20 +334,23 @@ namespace GameLibrary.Map
                             // place half brick
                             Transform beginBrick = SetBrick(
                                 new Vector3(xPosition, yPosition, begin.z),
-                                Quaternion.Euler(90, 0, 180),
+                                Quaternion.Euler(90, 0, 0),
                                 true);
+                            beginBrick.parent = container;
                             //place all the full bricks
                             for (int i = 0; i < numNortherlyBricks - 1; i++) // one fewer full bricks due to the half bricks on either end
                             {
                                 float zCenterOffset = _brickDepth; // 1/2 brick depth for the beginning half brick; 1/2 brick depth for the fact that the pointer is in the middle of the brick
                                 Vector3 brickPosition = new Vector3(xPosition, yPosition, begin.z + zCenterOffset + (i * _brickDepth));
                                 Transform thisBrick = SetBrick(brickPosition, Quaternion.Euler(90, 0, 0));
+                                thisBrick.parent = container;
                             }
                             // place half brick
                             Transform endBrick = SetBrick(
                                 new Vector3(xPosition, yPosition, end.z),
-                                Quaternion.Euler(90, 0, 0),
+                                Quaternion.Euler(90, 0, 180),
                                 true);
+                            endBrick.parent = container;
                         }
                         break;
                     case Direction.EAST:
@@ -244,6 +366,7 @@ namespace GameLibrary.Map
                                 float xCenterOffset = _brickDepth / 2; // you don't want the center of the brick on the beginnig line, you want the edge
                                 Vector3 brickPosition = new Vector3(begin.x + xCenterOffset + (i * _brickDepth), yPosition, zPosition);
                                 Transform thisBrick = SetBrick(brickPosition, Quaternion.Euler(90, 0, 90));
+                                thisBrick.parent = container;
                             }
                         }
                         else
@@ -251,30 +374,36 @@ namespace GameLibrary.Map
                             // place half brick
                             Transform beginBrick = SetBrick(
                                 new Vector3(begin.x, yPosition, zPosition),
-                                Quaternion.Euler(90, 0, 90),
+                                Quaternion.Euler(90, 0, 270),
                                 true);
+                            beginBrick.parent = container;
                             //place all the full bricks
                             for (int i = 0; i < numEasterlyBricks - 1; i++) // one fewer full bricks due to the half bricks on either end
                             {
                                 float xCenterOffset = _brickDepth; // 1/2 brick depth for the beginning half brick; 1/2 brick depth for the fact that the pointer is in the middle of the brick
                                 Vector3 brickPosition = new Vector3(begin.x + xCenterOffset + (i * _brickDepth), yPosition, zPosition);
                                 Transform thisBrick = SetBrick(brickPosition, Quaternion.Euler(90, 0, 90));
+                                thisBrick.parent = container;
                             }
                             // place half brick
                             Transform endBrick = SetBrick(
                                 new Vector3(end.x, yPosition, zPosition),
                                 //new Vector3(xPosition, yPosition, end.z),
-                                Quaternion.Euler(90, 0, 270),
+                                Quaternion.Euler(90, 0, 90),
                                 true);
+                            endBrick.parent = container;
                         }
                         break;
                 }
                 brickOffset = (brickOffset) ? false : true;
             }
+            return container;
         }
-
-        protected virtual void DrawWalls()
+        protected virtual Transform DrawWalls()
         {
+            Transform container = new GameObject().transform;
+            container.name = string.Format("Room {0} walls container", id);
+
             Vector3 nwUp = new Vector3(_westernEdgeX, _ceilingY, _northernEdgeZ);
             Vector3 nwDown = new Vector3(_westernEdgeX, _floorY, _northernEdgeZ);
             Vector3 seDown = new Vector3(_easternEdgeX, _floorY, _southernEdgeZ);
@@ -286,7 +415,10 @@ namespace GameLibrary.Map
 
             // draw west wall; SW -> NW
             if (_adjacentRooms == null || _adjacentRooms.Count == 0)
-                DrawWall(_southWestDown, nwUp, Direction.NORTH); // just draw the wall from corner to corner
+            {
+                Transform wallSegment = DrawWall(_southWestDown, nwUp, Direction.NORTH); // just draw the wall from corner to corner
+                wallSegment.parent = container;
+            }
             else
             {
                 List<float> wallPoints = new List<float>();
@@ -305,21 +437,25 @@ namespace GameLibrary.Map
                 {
                     Vector3 begin = new Vector3(_westernEdgeX, _floorY, wallPoints[j]);
                     Vector3 end = new Vector3(_westernEdgeX, nwUp.y, wallPoints[j + 1]);
-                    DrawWall(begin, end, Direction.NORTH);
+                    Transform wallSegment = DrawWall(begin, end, Direction.NORTH);
+                    wallSegment.parent = container;
                 }
             }
 
 
             // draw north wall; NW -> NE
             if (_adjacentRooms == null || _adjacentRooms.Count == 0)
-                DrawWall(nwDown, _northEastUp, Direction.EAST); // just draw the wall from corner to corner
+            {
+                Transform wallSegment = DrawWall(nwDown, _northEastUp, Direction.EAST); // just draw the wall from corner to corner
+                wallSegment.parent = container;
+            }
             else
             {
                 List<float> wallPoints = new List<float>();
                 wallPoints.Add(_westernEdgeX);
-                for(int i = 0; i < _adjacentRooms.Count; i++)
+                for (int i = 0; i < _adjacentRooms.Count; i++)
                 {
-                    if(_adjacentRooms[i].adjacentWall == Direction.NORTH)
+                    if (_adjacentRooms[i].adjacentWall == Direction.NORTH)
                     {
                         wallPoints.Add(_adjacentRooms[i].room.GetEdge(Direction.WEST));
                         wallPoints.Add(_adjacentRooms[i].room.GetEdge(Direction.EAST));
@@ -327,17 +463,21 @@ namespace GameLibrary.Map
                 }
                 wallPoints.Add(_easternEdgeX);
                 if (wallPoints.Count > 2) wallPoints.Sort(); // prevents going out of order
-                for(int j = 0; j < wallPoints.Count; j+=2) // take the wall points in pairs
+                for (int j = 0; j < wallPoints.Count; j += 2) // take the wall points in pairs
                 {
                     Vector3 begin = new Vector3(wallPoints[j], _floorY, _northernEdgeZ);
-                    Vector3 end = new Vector3(wallPoints[j+1], _ceilingY, _northernEdgeZ);
-                    DrawWall(begin, end, Direction.EAST);
+                    Vector3 end = new Vector3(wallPoints[j + 1], _ceilingY, _northernEdgeZ);
+                    Transform wallSegment = DrawWall(begin, end, Direction.EAST);
+                    wallSegment.parent = container;
                 }
             }
 
             // draw east wall; SE -> NE
             if (_adjacentRooms == null || _adjacentRooms.Count == 0)
-                DrawWall(seDown, _northEastUp, Direction.NORTH); // just draw the wall from corner to corner
+            {
+                Transform wallSegment = DrawWall(seDown, _northEastUp, Direction.NORTH); // just draw the wall from corner to corner
+                wallSegment.parent = container;
+            }
             else
             {
                 List<float> wallPoints = new List<float>();
@@ -356,13 +496,17 @@ namespace GameLibrary.Map
                 {
                     Vector3 begin = new Vector3(_easternEdgeX, _floorY, wallPoints[j]);
                     Vector3 end = new Vector3(_easternEdgeX, _ceilingY, wallPoints[j + 1]);
-                    DrawWall(begin, end, Direction.NORTH);
+                    Transform wallSegment = DrawWall(begin, end, Direction.NORTH);
+                    wallSegment.parent = container;
                 }
             }
 
             // draw south wall; SW -> SE
             if (_adjacentRooms == null || _adjacentRooms.Count == 0)
-                DrawWall(_southWestDown, seUp, Direction.EAST); // just draw the wall from corner to corner
+            {
+                Transform wallSegment = DrawWall(_southWestDown, seUp, Direction.EAST); // just draw the wall from corner to corner
+                wallSegment.parent = container;
+            }
             else
             {
                 List<float> wallPoints = new List<float>();
@@ -381,22 +525,60 @@ namespace GameLibrary.Map
                 {
                     Vector3 begin = new Vector3(wallPoints[j], _floorY, _southernEdgeZ);
                     Vector3 end = new Vector3(wallPoints[j + 1], seUp.y, _southernEdgeZ);
-                    DrawWall(begin, end, Direction.EAST);
+                    Transform wallSegment = DrawWall(begin, end, Direction.EAST);
+                    wallSegment.parent = container;
                 }
             }
+            return container;
         }
-
-        private void DrawColumns()
+        protected virtual Transform DrawColumns()
         {
-            SetColumn(new Vector3(_easternEdgeX, 1 + _tileHeight, _southernEdgeZ), Quaternion.Euler(-90, 0, 0)); // SE column
-            SetColumn(new Vector3(_easternEdgeX, 1 + _tileHeight, _northernEdgeZ), Quaternion.Euler(-90, 0, 0)); // NE column
-            SetColumn(new Vector3(_westernEdgeX, 1 + _tileHeight, _northernEdgeZ), Quaternion.Euler(-90, 0, 0)); // NW column
-            SetColumn(new Vector3(_westernEdgeX, 1 + _tileHeight, _southernEdgeZ), Quaternion.Euler(-90, 0, 0)); // SW column
+            Transform container = new GameObject().transform;
+            container.name = string.Format("Room {0} columns container", id);
+
+            Transform column1 = SetColumn(new Vector3(_easternEdgeX, 1 + _tileHeight, _southernEdgeZ), Quaternion.Euler(90, 0, 0)); // SE column
+            Transform column2 = SetColumn(new Vector3(_easternEdgeX, 1 + _tileHeight, _northernEdgeZ), Quaternion.Euler(90, 0, 0)); // NE column
+            Transform column3 = SetColumn(new Vector3(_westernEdgeX, 1 + _tileHeight, _northernEdgeZ), Quaternion.Euler(90, 0, 0)); // NW column
+            Transform column4 = SetColumn(new Vector3(_westernEdgeX, 1 + _tileHeight, _southernEdgeZ), Quaternion.Euler(90, 0, 0)); // SW column
+            column1.parent = container;
+            column2.parent = container;
+            column3.parent = container;
+            column4.parent = container;
+
+            return container;
+        }
+        private Transform DrawTorches()
+        {
+            Transform container = new GameObject().transform;
+            container.name = string.Format("Room {0} torches container", id);
+
+            if (_torches == null) _torches = new List<Vector3>();
+            foreach (Vector3 v in _torches)
+            {
+                Quaternion rotation = Quaternion.Euler(0, 0, 0);
+
+                if (v.z == _northernEdgeZ - GlobalMapParameters.torchWallOffset) // north wall
+                    rotation = Quaternion.Euler(-90, -90, 0);
+                if (v.z == _southernEdgeZ + GlobalMapParameters.torchWallOffset) // south wall
+                    rotation = Quaternion.Euler(-90, 90, 0);
+                if (v.x == _easternEdgeX - GlobalMapParameters.torchWallOffset) // east wall
+                    rotation = Quaternion.Euler(-90, 0, 0);
+                if (v.x == _westernEdgeX + GlobalMapParameters.torchWallOffset) // west wall
+                    rotation = Quaternion.Euler(-90, 180, 0);
+
+
+                Transform torch = SetTorch(v, rotation);
+                torch.parent = container;
+            }
+
+            return container;
         }
 
         private Transform SetTile(Vector3 position)
         {
             Transform thisTile = UnityEngine.Object.Instantiate(GlobalBuildingMaterials.tile001, position, Quaternion.Euler(-90, 0, 0)).AddComponent<BoxCollider>().transform;
+            _instantiatedObjects.Add(thisTile);
+            SetColor(thisTile);
             return thisTile;
         }
         private Transform SetBrick(Vector3 position, Quaternion rotation, bool cap = false)
@@ -404,19 +586,29 @@ namespace GameLibrary.Map
             Transform thisBrick;
             if (cap) thisBrick = UnityEngine.Object.Instantiate(GlobalBuildingMaterials.halfBrick001, position, rotation).AddComponent<BoxCollider>().transform;
             else thisBrick = UnityEngine.Object.Instantiate(GlobalBuildingMaterials.brick001, position, rotation).AddComponent<BoxCollider>().transform;
+            _instantiatedObjects.Add(thisBrick);
+            SetColor(thisBrick);
             return thisBrick;
         }
         private Transform SetColumn(Vector3 position, Quaternion rotation)
         {
             Transform thisColumn = UnityEngine.Object.Instantiate(GlobalBuildingMaterials.column001, position, rotation).AddComponent<BoxCollider>().transform;
+            _instantiatedObjects.Add(thisColumn);
+            SetColor(thisColumn);
             return thisColumn;
         }
-        private void SetColor(Transform thisBrick)
+        private Transform SetTorch(Vector3 position, Quaternion rotation)
         {
-            float rModifier = 0;// RNG.getRandomInt(-10, 10);
-            float gModifier = 0;//RNG.getRandomInt(-10, 10);
-            float bModifier = 0;//RNG.getRandomInt(-10, 10);
-            thisBrick.GetComponent<Renderer>().material.color = new Color(_tileColorR + rModifier, _tileColorG + gModifier, _tileColorB + bModifier);
+            Transform thisTorch = UnityEngine.Object.Instantiate(GlobalBuildingMaterials.torch001, position, rotation).transform;
+            _instantiatedObjects.Add(thisTorch);
+            return thisTorch;
+        }
+        private void SetColor(Transform thisObject)
+        {
+            float rModifier = (float)RNG.getRandomInt(0, GlobalMapParameters.colorVarianceMax) / 100;
+            float gModifier = (float)RNG.getRandomInt(0, GlobalMapParameters.colorVarianceMax) / 100;
+            float bModifier = (float)RNG.getRandomInt(0, GlobalMapParameters.colorVarianceMax) / 100;
+            thisObject.GetComponent<Renderer>().material.color = new Color(_baseColor.r + rModifier, _baseColor.g + gModifier, _baseColor.b + bModifier);
         }
 
     }

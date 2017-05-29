@@ -4,36 +4,60 @@ using UnityEngine;
 
 namespace GameLibrary.Map
 {
-    public class MainMap
+    public static class MainMap
     {
-        
-        public Dictionary<int, Level> levels
+        private static int _currentLevelId;
+        private static Level _currentLevel;
+        private static int _currentRoomId;
+        private static Room _currentRoom;
+
+        public static Dictionary<int, Level> levels
         {
             get { return _levels; }
         }
-        Dictionary<int, Level> _levels;
+        private static Dictionary<int, Level> _levels;
 
 
-        public MainMap()
+        static MainMap()
         {
             _levels = new Dictionary<int, Level>();
         }
-        public bool AddLevel(int levelNumber, Level newLevel)
+        public static void AddLevel(int levelNumber, Level newLevel)
         {
             if (_levels.ContainsKey(levelNumber))
             {
                 Debug.LogError(string.Format("Level {0} already exists.", levelNumber));
-                return false;
             }
             newLevel.levelNumber = levelNumber; // make sure they match
             _levels.Add(levelNumber, newLevel);
-            return true;
         }
-        public Level GetLevel(int levelNumber)
+        public static Level GetLevel(int levelNumber)
         {
             Level returnVal = null;
             _levels.TryGetValue(levelNumber, out returnVal);
             return returnVal;
+        }
+        public static Level GetCurrentLevel()
+        {
+            Level returnVal = null;
+            _levels.TryGetValue(_currentLevelId, out returnVal);
+            return returnVal;
+        }
+        public static Room GetCurrentRoom()
+        {
+            Room returnVal = null;
+            GetCurrentLevel().rooms.TryGetValue(_currentRoomId, out returnVal);
+            return returnVal;
+        }
+        public static void SetCurrentLevelId(int levelId)
+        {
+            _currentLevelId = levelId;
+            _levels.TryGetValue(_currentLevelId, out _currentLevel);
+        }
+        public static void SetCurrentRoomId(int roomId)
+        {
+            _currentRoomId = roomId;
+            _currentLevel.rooms.TryGetValue(_currentRoomId, out _currentRoom);
         }
 
     }

@@ -13,14 +13,24 @@ namespace GameLibrary.Map
         private Vector3 _startingPoint;
         private MapSquare[] _grid;
         private int _numMainRooms;
-        // todo: implement a level floor Y, instead of just assuming 0
+        private Color _baseColor;
+        private Transform _container;
 
+        
         public Level(Vector3 startingPoint)
         {
             InitializeGrid();
             _rooms = new Dictionary<int, Room>();
             _startingPoint = startingPoint;
             _numMainRooms = RNG.getRandomInt(GlobalMapParameters.minRoomsPerFloor, GlobalMapParameters.maxRoomsPerFloor);
+
+            float r = (float)RNG.getRandomInt(0, 100) / 100;
+            float g = (float)RNG.getRandomInt(0, 100) / 100;
+            float b = (float)RNG.getRandomInt(0, 100) / 100;
+            _baseColor = new Color(r, g, b);
+
+            _container = new GameObject().transform;
+            _container.name = string.Format("Level {0} container", levelNumber);
         }
 
         #region // public interface methods
@@ -35,13 +45,8 @@ namespace GameLibrary.Map
             float eastEdge = _startingPoint.x + GlobalMapParameters.startingRoomRadius;
             float westEdge = _startingPoint.x - GlobalMapParameters.startingRoomRadius;
 
-            /*********************************
-             * note to self, I think the 
-             * northwestdown and southeastup
-             * variables are misnamed.
-             * todo: fix nwdown and swup
-             * *******************************/
-            Room starterRoom = new Room(0, new Vector3(westEdge, 0, southEdge), new Vector3(eastEdge, GlobalMapParameters.roomHeight, northEdge), tileSet);
+            
+            Room starterRoom = new Room(0, new Vector3(westEdge, _startingPoint.y, southEdge), new Vector3(eastEdge, GlobalMapParameters.roomHeight, northEdge), tileSet, _baseColor);
             PopulateGridSquares(starterRoom);
             _rooms.Add(0, starterRoom);
 
@@ -49,25 +54,185 @@ namespace GameLibrary.Map
             {
                 Room room = CreateRoom(i, tileSet);
                 _rooms.Add(i, room);
-
             }
             CreateCorridors(tileSet);
             CreateRightAngleConnections(tileSet);
             CreateTeleportersForClosedLoops();
+            Transform doorsContainer = AddDoors();
+            doorsContainer.parent = _container;
+            doorsContainer.gameObject.SetActive(false); // this is done because doors aren't rendered as needed, so you want to prevent doors from other levels from displaying
 
-            for (int i = 0; i < _rooms.Count; i++)
-            {
-                _rooms[i].DrawRoom();
-            }
+           
+
+
 
             return true;
             
+
+        }
+        public void DecorateRooms()
+        {
+            foreach(KeyValuePair<int, Room> entry in _rooms) AddTorchesToRoom(entry.Value);
+        }
+
+        public void DrawLevel()
+        {
+            _container.FindChild(string.Format("Level {0} doors container", levelNumber)).gameObject.SetActive(true); // only render the doors for the current level
+            for (int i = 0; i < _rooms.Count; i++)
+            {
+                if (!_rooms[i].IsDrawn()) _rooms[i].DrawRoom();
+                _rooms[i].RenderRoomObjects(false);
+            }
+            _rooms[0].RenderRoomObjects(true);
+            _rooms[0].UnlockDoors();
+
+            // parent rooms to _container
+            for (int i = 0; i < _rooms.Count; i++)
+            {
+                _rooms[i].GetContainer().parent = _container;
+            }
 
         }
         #endregion // public methods
 
 
         #region room creation methods
+        private Transform AddDoors()
+        {
+            Transform container = new GameObject().transform;
+            container.name = string.Format("Level {0} doors container", levelNumber);
+
+            List<RoomConnection> connections = new List<RoomConnection>();
+            foreach(KeyValuePair<int, Room> roomPair in rooms)
+            {
+                Room r1 = roomPair.Value;
+                int r1Id = roomPair.Key;
+                foreach(RoomAdjacency ra in r1.GetAdjacencies())
+                {
+                    Room r2 = ra.room;
+                    int r2Id = r2.id;
+                    RoomConnection rc = new RoomConnection()
+                    {
+                        starterRoom = (r1Id < r2Id) ? r1 : r2,
+                        connectedRoom = (r1Id > r2Id) ? r1 : r2
+                    };
+                    if(!connections.Contains(rc))
+                    {
+                        //Debug.Log(string.Format("New door between rooms {0} and {1}", rc.starterRoom.id, rc.connectedRoom.id));
+                        connections.Add(rc);
+
+                        Quaternion rotation = Quaternion.Euler(0, 0, 0);
+                        Vector3 position = new Vector3(0, 0, 0);
+                        switch (ra.adjacentWall)
+                        {
+                            case Direction.EAST:
+                                rotation = Quaternion.Euler(0, 90, 0);
+                                float x = r1.GetEdge(Direction.EAST);
+                                float r2Width = r2.GetEdge(Direction.NORTH) - r2.GetEdge(Direction.SOUTH);
+                                float z = r2.GetEdge(Direction.NORTH) - (r2Width / 2);
+                                position = new Vector3(x, _startingPoint.y, z);
+                                break;
+                            case Direction.WEST:
+                                rotation = Quaternion.Euler(0, 90, 0);
+                                x = r1.GetEdge(Direction.WEST);
+                                r2Width = r2.GetEdge(Direction.NORTH) - r2.GetEdge(Direction.SOUTH);
+                                z = r2.GetEdge(Direction.NORTH) - (r2Width / 2);
+                                position = new Vector3(x, _startingPoint.y, z);
+                                break;
+                            case Direction.NORTH:
+                                rotation = Quaternion.Euler(0, 0, 0);
+                                z = r1.GetEdge(Direction.NORTH);
+                                r2Width = r2.GetEdge(Direction.EAST) - r2.GetEdge(Direction.WEST);
+                                x = r2.GetEdge(Direction.EAST) - (r2Width / 2);
+                                position = new Vector3(x, _startingPoint.y, z);
+                                break;
+                            case Direction.SOUTH:
+                                rotation = Quaternion.Euler(0, 0, 0);
+                                z = r1.GetEdge(Direction.SOUTH);
+                                r2Width = r2.GetEdge(Direction.EAST) - r2.GetEdge(Direction.WEST);
+                                x = r2.GetEdge(Direction.EAST) - (r2Width / 2);
+                                position = new Vector3(x, _startingPoint.y, z);
+                                break;
+                        }
+
+
+
+
+
+                        GameObject doorObj = UnityEngine.Object.Instantiate(GlobalBuildingMaterials.door001, position, rotation);
+                        Transform door = doorObj.transform;
+                        //door.gameObject.SetActive(false); // initialize doors to be invisible
+                        door.name = string.Format("DoorBetween:{0}:{1}", rc.starterRoom.id, rc.connectedRoom.id);
+                        rooms[rc.starterRoom.id].AddDoor(door);
+                        rooms[rc.connectedRoom.id].AddDoor(door);
+
+
+                        float rModifier = (float)RNG.getRandomInt(0, GlobalMapParameters.colorVarianceMax) / 100;
+                        float gModifier = (float)RNG.getRandomInt(0, GlobalMapParameters.colorVarianceMax) / 100;
+                        float bModifier = (float)RNG.getRandomInt(0, GlobalMapParameters.colorVarianceMax) / 100;
+
+                        door.FindChild("door001_frame").GetComponent<Renderer>().material.color = new Color(_baseColor.r + rModifier, _baseColor.g + gModifier, _baseColor.b + bModifier);
+
+                        door.parent = container;
+                    }
+                }
+            }
+            return container;
+        }
+        private void AddTorchesToRoom(Room r)
+        {
+            AddTorchesToWall(r, Direction.NORTH);
+            AddTorchesToWall(r, Direction.SOUTH);
+            AddTorchesToWall(r, Direction.EAST);
+            AddTorchesToWall(r, Direction.WEST);
+        }
+        private void AddTorchesToWall(Room r, Direction direction)
+        {
+            float torchHeight = 1.25f;
+            float torchWallOffset = (direction == Direction.SOUTH || direction == Direction.WEST) 
+                ? GlobalMapParameters.torchWallOffset : 0 - GlobalMapParameters.torchWallOffset;
+            DirectionSet ds = DirectionHelper.GetDirectionSetFromPrimary(direction);
+
+            List<float> wallPoints = new List<float>();
+            wallPoints.Add(r.GetEdge(ds.PerpendicularMin));
+            List<RoomAdjacency> adjacentRooms = r.GetAdjacencies();
+            for (int i = 0; i < adjacentRooms.Count; i++)
+            {
+                if (adjacentRooms[i].adjacentWall == ds.Primary)
+                {
+                    float otherRoomPerpMin = adjacentRooms[i].room.GetEdge(ds.PerpendicularMin);
+                    float otherRoomPerpMax = adjacentRooms[i].room.GetEdge(ds.PerpendicularMax);
+                    if(otherRoomPerpMin >= r.GetEdge(ds.PerpendicularMin) && !wallPoints.Contains(otherRoomPerpMin)) wallPoints.Add(otherRoomPerpMin); // only add a torch if within the bounds of r
+                    if (otherRoomPerpMax <= r.GetEdge(ds.PerpendicularMax) && !wallPoints.Contains(otherRoomPerpMax)) wallPoints.Add(otherRoomPerpMax);
+                }
+            }
+            if(!wallPoints.Contains(r.GetEdge(ds.PerpendicularMax)))wallPoints.Add(r.GetEdge(ds.PerpendicularMax));
+            if (wallPoints.Count > 2) wallPoints.Sort(); // prevents going out of order
+            for (int j = 0; j < wallPoints.Count - 1; j ++) // take the wall points in pairs
+            {
+                
+                float lengthOfSegment = wallPoints[j + 1] - wallPoints[j];
+               
+                if (lengthOfSegment > GlobalMapParameters.corridorWidth)
+                {
+                    float x = 0;
+                    float z = 0;
+                    if (direction == Direction.EAST || direction == Direction.WEST)
+                    {
+                        x = r.GetEdge(ds.Primary) + torchWallOffset;
+                        z = wallPoints[j] + (lengthOfSegment / 2);
+                    }
+                    else
+                    {
+                        x = wallPoints[j] + ((wallPoints[j + 1] - wallPoints[j]) / 2);
+                        z = r.GetEdge(ds.Primary) + torchWallOffset;
+                    }
+
+                    r.AddTorch(new Vector3(x, torchHeight, z));
+                }
+                
+            }
+        }
         private void CreateCorridors(int tileSet)
         {
             for (int i = 0; i < _numMainRooms; i++) // can't foreach the list because you add to it while you're doing it
@@ -89,8 +254,20 @@ namespace GameLibrary.Map
                         connection.connectedRoom.AddAdjacency(new RoomAdjacency()
                         {
                             room = connection.corridor,
-                            adjacentWall = GetOppositeDirection(connection.corridor.direction)
+                            adjacentWall = DirectionHelper.GetOppositeDirection(connection.corridor.direction)
                         });
+                        connection.corridor.AddAdjacency(new RoomAdjacency()
+                        {
+                            room = connection.starterRoom,
+                            adjacentWall = DirectionHelper.GetOppositeDirection(connection.corridor.direction)
+                        });
+                        connection.corridor.AddAdjacency(new RoomAdjacency()
+                        {
+                            room = connection.connectedRoom,
+                            adjacentWall = connection.corridor.direction
+                        });
+
+
                         connection.connectedRoom.AddConnection(connection.starterRoom);
                     }
                 }
@@ -108,7 +285,17 @@ namespace GameLibrary.Map
                     connection.connectedRoom.AddAdjacency(new RoomAdjacency()
                     {
                         room = connection.corridor,
-                        adjacentWall = GetOppositeDirection(connection.corridor.direction)
+                        adjacentWall = DirectionHelper.GetOppositeDirection(connection.corridor.direction)
+                    });
+                    connection.corridor.AddAdjacency(new RoomAdjacency()
+                    {
+                        room = connection.starterRoom,
+                        adjacentWall = DirectionHelper.GetOppositeDirection(connection.corridor.direction)
+                    });
+                    connection.corridor.AddAdjacency(new RoomAdjacency()
+                    {
+                        room = connection.connectedRoom,
+                        adjacentWall = connection.corridor.direction
                     });
                 }
             }
@@ -202,7 +389,8 @@ namespace GameLibrary.Map
                                                 -1,
                                                 new Vector3(cpWestEdge, 0, cpSouthEdge),
                                                 new Vector3(cpEastEdge, GlobalMapParameters.roomHeight, cpNorthEdge),
-                                                tileSet
+                                                tileSet,
+                                                _baseColor
                                                 );
                             if (IsThereSpaceForTheRoom(centerPoint, true))
                             {
@@ -216,6 +404,7 @@ namespace GameLibrary.Map
                                                 new Vector3(zLegWestEdge, 0, zLegSouthEdge),
                                                 new Vector3(zLegEastEdge, GlobalMapParameters.roomHeight, zLegNorthEdge),
                                                 tileSet,
+                                                _baseColor,
                                                 Direction.NORTH
                                                 );
                                 if (IsThereSpaceForTheRoom(zLeg))
@@ -230,6 +419,7 @@ namespace GameLibrary.Map
                                                     new Vector3(xLegWestEdge, 0, xLegSouthEdge),
                                                     new Vector3(xLegEastEdge, GlobalMapParameters.roomHeight, xLegNorthEdge),
                                                     tileSet,
+                                                    _baseColor,
                                                     Direction.EAST
                                                     );
                                     if (IsThereSpaceForTheRoom(xLeg))
@@ -253,8 +443,24 @@ namespace GameLibrary.Map
                                         target.AddAdjacency(
                                             new RoomAdjacency() { room = xLeg, adjacentWall = (sourceX > targetX) ? Direction.EAST : Direction.WEST }
                                             );
-                                        // add target adjacency for zleg
-                                        // add the xleg
+
+
+                                        zLeg.AddAdjacency(
+                                            new RoomAdjacency() { room = centerPoint, adjacentWall = (sourceZ > targetZ) ? Direction.SOUTH : Direction.NORTH }
+                                            );
+                                        xLeg.AddAdjacency(
+                                            new RoomAdjacency() { room = centerPoint, adjacentWall = (sourceX > targetX) ? Direction.EAST : Direction.WEST }
+                                            );
+                                        zLeg.AddAdjacency(
+                                            new RoomAdjacency() { room = source, adjacentWall = (sourceZ > targetZ) ? Direction.NORTH : Direction.SOUTH }
+                                            );
+                                        xLeg.AddAdjacency(
+                                            new RoomAdjacency() { room = target, adjacentWall = (sourceX > targetX) ? Direction.WEST : Direction.EAST }
+                                            );
+
+
+
+
                                         centerPoint.id = _rooms.Count;
                                         _rooms.Add(_rooms.Count, centerPoint);
                                         zLeg.id = _rooms.Count;
@@ -294,12 +500,18 @@ namespace GameLibrary.Map
 
                 room = new Room(
                     id,
-                    new Vector3(westEdge, 0, southEdge),
+                    new Vector3(westEdge, _startingPoint.y, southEdge),
                     new Vector3(eastEdge, GlobalMapParameters.roomHeight, northEdge),
-                    tileSet
+                    tileSet,
+                    _baseColor
                     );
 
                 if (IsThereSpaceForTheRoom(room, true)) roomPlaced = true;
+                else
+                {
+                    room.EraseRoom();
+                    room = null;
+                }
             }
 
 
@@ -321,21 +533,22 @@ namespace GameLibrary.Map
              * to the next in the list. Have the last connect to the
              * first in the list. shazam? shaZAM!
              * ******************************************************/
-            for (int i = 0; i < closedLoops.Count; i++)
+            if (closedLoops != null)
             {
-                List<int> sourceLoop = closedLoops[i];
-                List<int> destinationLoop = closedLoops[(i < closedLoops.Count - 1) ? i + 1 : 0];
-                Room r1 = _rooms[sourceLoop[sourceLoop.Count - 1]]; // last room in source loop
-                Room r2 = _rooms[destinationLoop[0]]; // first room in destination loop
-                // todo: set teleporters in rooms more intelligently 
-                Vector3 source = new Vector3(r1.GetEdge(Direction.EAST - 1), 0, r1.GetEdge(Direction.NORTH - 1));
-                Vector3 destination = new Vector3(r2.GetEdge(Direction.WEST + 1), 0, r1.GetEdge(Direction.SOUTH + 1));
-                Teleporter t = new Teleporter() { source = source, destination = destination, active = false };
-                r1.AddTeleporter(t, true);
-                r2.AddTeleporter(t, false);
+                for (int i = 0; i < closedLoops.Count; i++)
+                {
+                    List<int> sourceLoop = closedLoops[i];
+                    List<int> destinationLoop = closedLoops[(i < closedLoops.Count - 1) ? i + 1 : 0];
+                    Room r1 = _rooms[sourceLoop[sourceLoop.Count - 1]]; // last room in source loop
+                    Room r2 = _rooms[destinationLoop[0]]; // first room in destination loop
+                                                          // todo: set teleporters in rooms more intelligently 
+                    Vector3 source = new Vector3(r1.GetEdge(Direction.EAST - 1), 0, r1.GetEdge(Direction.NORTH - 1));
+                    Vector3 destination = new Vector3(r2.GetEdge(Direction.WEST + 1), 0, r1.GetEdge(Direction.SOUTH + 1));
+                    Teleporter t = new Teleporter() { source = source, destination = destination, active = false };
+                    r1.AddTeleporter(t, true);
+                    r2.AddTeleporter(t, false);
+                }
             }
-
-
         }
         private RoomConnection FindRoomToConnect(Room room, int tileSet)
         {
@@ -353,11 +566,7 @@ namespace GameLibrary.Map
                 if (numTries > 0) direction = (Direction)((int)(direction + 1) % 4); // try a different direction if the last didn't work
 
                 // first need to get your directions to use so this can avoid a giant stupid switch on directions
-                Direction primaryDirection = direction;
-                Direction primaryDirectionOpposite = GetOppositeDirection(primaryDirection);
-                int directionAdd = (primaryDirection == Direction.EAST || primaryDirection == Direction.SOUTH) ? 1 : 3; // n 3; e +1; s +1; w 3;
-                Direction perpendicularDirectionMin = (Direction)((int)(primaryDirection + directionAdd) % 4);
-                Direction perpendicularDirectionMax = GetOppositeDirection(perpendicularDirectionMin);
+                DirectionSet ds = DirectionHelper.GetDirectionSetFromPrimary(direction);
 
                 // now try each room to see if it can fit.
                 foreach (KeyValuePair<int, Room> roomEntry in _rooms)
@@ -384,10 +593,10 @@ namespace GameLibrary.Map
                              * and target's souther edge cannot be greater than our norther edge + corridorMax
                              * */
 
-                            if (candidate.GetEdge(perpendicularDirectionMin) < room.GetEdge(perpendicularDirectionMax) - 1)
-                                if (candidate.GetEdge(perpendicularDirectionMax) > room.GetEdge(perpendicularDirectionMin) + 1)
-                                    if (candidate.GetEdge(primaryDirectionOpposite) >= room.GetEdge(primaryDirection) + GlobalMapParameters.minCorridorLength)
-                                        if (candidate.GetEdge(primaryDirectionOpposite) <= room.GetEdge(primaryDirection) + GlobalMapParameters.maxCorridorLength)
+                            if (candidate.GetEdge(ds.PerpendicularMin) < room.GetEdge(ds.PerpendicularMax) - 1)
+                                if (candidate.GetEdge(ds.PerpendicularMax) > room.GetEdge(ds.PerpendicularMin) + 1)
+                                    if (candidate.GetEdge(ds.PrimaryOpposite) >= room.GetEdge(ds.Primary) + GlobalMapParameters.minCorridorLength)
+                                        if (candidate.GetEdge(ds.PrimaryOpposite) <= room.GetEdge(ds.Primary) + GlobalMapParameters.maxCorridorLength)
                                         {
                                             /*
                                              * we have a match, as long as nothing else is in the way
@@ -398,24 +607,24 @@ namespace GameLibrary.Map
                                             float corridorMinX;
                                             float corridorMaxX;
 
-                                            corridorMinX = (candidate.GetEdge(perpendicularDirectionMin) <= room.GetEdge(perpendicularDirectionMin)) ?
-                                                room.GetEdge(perpendicularDirectionMin) :
-                                                candidate.GetEdge(perpendicularDirectionMin);
-                                            corridorMaxX = (candidate.GetEdge(perpendicularDirectionMax) >= room.GetEdge(perpendicularDirectionMax)) ?
-                                                room.GetEdge(perpendicularDirectionMax) :
-                                                candidate.GetEdge(perpendicularDirectionMax);
+                                            corridorMinX = (candidate.GetEdge(ds.PerpendicularMin) <= room.GetEdge(ds.PerpendicularMin)) ?
+                                                room.GetEdge(ds.PerpendicularMin) :
+                                                candidate.GetEdge(ds.PerpendicularMin);
+                                            corridorMaxX = (candidate.GetEdge(ds.PerpendicularMax) >= room.GetEdge(ds.PerpendicularMax)) ?
+                                                room.GetEdge(ds.PerpendicularMax) :
+                                                candidate.GetEdge(ds.PerpendicularMax);
 
                                             float corridorLesserEdge = RNG.getRandomInt((int)corridorMinX, (int)corridorMaxX - GlobalMapParameters.corridorWidth);
                                             float corridorGreaterEdge = corridorLesserEdge + GlobalMapParameters.corridorWidth;
-                                            float corridorTargetEdge = candidate.GetEdge(primaryDirectionOpposite);
-                                            float corridorSourceEdge = room.GetEdge(primaryDirection);
+                                            float corridorTargetEdge = candidate.GetEdge(ds.PrimaryOpposite);
+                                            float corridorSourceEdge = room.GetEdge(ds.Primary);
 
                                             float northEdge = 0;
                                             float southEdge = 0;
                                             float eastEdge = 0;
                                             float westEdge = 0;
 
-                                            if (primaryDirection == Direction.NORTH || primaryDirection == Direction.SOUTH)
+                                            if (ds.Primary == Direction.NORTH || ds.Primary == Direction.SOUTH)
                                             {
                                                 northEdge = (corridorTargetEdge > corridorSourceEdge) ? corridorTargetEdge : corridorSourceEdge;
                                                 southEdge = (corridorSourceEdge > corridorTargetEdge ) ? corridorTargetEdge : corridorSourceEdge;
@@ -431,10 +640,11 @@ namespace GameLibrary.Map
                                             }
                                             Corridor corridorCandidate = new Corridor(
                                                 -1,
-                                                new Vector3(westEdge, 0, southEdge),
+                                                new Vector3(westEdge, _startingPoint.y, southEdge),
                                                 new Vector3(eastEdge, GlobalMapParameters.roomHeight, northEdge),
                                                 tileSet,
-                                                primaryDirection
+                                                _baseColor,
+                                                ds.Primary
                                                 );
 
                                             if (IsThereSpaceForTheRoom(corridorCandidate))
@@ -563,9 +773,18 @@ namespace GameLibrary.Map
             int index = (rowNumber * totalRows) + GlobalMapParameters.mapSize + (int)x;
             return index;
         }
-        private Direction GetOppositeDirection(Direction direction)
+        private Vector2 GetXYFromGridIndex(int i)
         {
-            return (Direction)(((int)direction + 2) % 4);
+            int totalRows = (GlobalMapParameters.mapSize * 2) + 1; // same number for columns
+            int column = i % totalRows;
+            float x = 0 - GlobalMapParameters.mapSize + column;
+            int row = (int)Mathf.Floor((float)(i / totalRows));
+            float y = 0 - GlobalMapParameters.mapSize + row;
+            //if(GetGridIndexFromXY(x,y) != i)
+            //{
+            //    string spag = "true";
+            //}
+            return new Vector2(x, y);
         }
         private void InitializeGrid()
         {
