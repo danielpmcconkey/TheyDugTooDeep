@@ -29,6 +29,13 @@ namespace GameLibrary.Helpers
             _seedSet = true;
 
         }
+        public static void SetSeed()
+        {
+            System.Random rnd = new System.Random();
+            _seed = rnd.Next(1, System.Int32.MaxValue);
+            _seedSet = true;
+
+        }
         public static int getRandomInt(int min, int max)
         {
             if (!_seedSet) return 0;
