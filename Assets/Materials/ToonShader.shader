@@ -1,4 +1,6 @@
-﻿// Upgrade NOTE: replaced '_Object2World' with 'unity_ObjectToWorld'
+﻿// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
+
+// Upgrade NOTE: replaced '_Object2World' with 'unity_ObjectToWorld'
 // Upgrade NOTE: replaced '_World2Object' with 'unity_WorldToObject'
 
 // WATCH FULL EXPLANATION ON YOUTUBE-VIDEO: https://www.youtube.com/watch?v=3qBDTh9zWrQ 
@@ -82,7 +84,7 @@ Shader "Our Toonshader Vol. 3" {
 			);
 
 		//fragmentInput output;
-		output.pos = mul(UNITY_MATRIX_MVP, input.vertex);
+		output.pos = UnityObjectToClipPos(input.vertex);
 
 		//UV-Map
 		output.uv = input.texcoord;
