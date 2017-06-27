@@ -21,5 +21,6 @@ namespace GameLibrary.Map
         public static int maxRetries = 25; // used for while loops to prevent infinite looping
         public static float torchWallOffset = 0.25f;
         public static int colorVarianceMax = 10;
+        public static string unwalkableLayerName = "Unwalkable";
     }
 }

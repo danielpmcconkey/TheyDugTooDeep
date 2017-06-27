@@ -36,6 +36,10 @@ namespace GameLibrary.Helpers
             _seedSet = true;
 
         }
+        public static int GetSeed()
+        {
+            return _seed;
+        }
         public static int getRandomInt(int min, int max)
         {
             if (!_seedSet) return 0;

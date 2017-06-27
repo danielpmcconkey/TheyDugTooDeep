@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using GameLibrary.Helpers;
+using GameLibrary.Character;
 
 namespace GameLibrary.Map
 {
@@ -21,6 +22,9 @@ namespace GameLibrary.Map
         protected float _southernEdgeZ;
         protected float _floorY;
         protected float _ceilingY;
+        //protected bool[] _grid;        // a grid of "squares" in the room to contain initial object placement
+        protected RoomGrid _roomGrid;
+
         #endregion geographic members
 
         #region skin members
@@ -34,18 +38,20 @@ namespace GameLibrary.Map
         private Color _baseColor;
         #endregion skin members
 
-
+        public Dictionary<int, Monster> _monsters; // todo: turn _monsters back to private
+        
         private List<RoomAdjacency> _adjacentRooms;
         private List<Room> _connectedRooms;
         private bool _isDrawn;
         private bool _isRendered = false;
-        private List<Teleporter> _teleportersOut;
-        private List<Teleporter> _teleportersIn;
+        private bool _isCleared = false;
+        private List<Teleporter> _teleporters;
         private List<Vector3> _torches;
         private List<Transform> _instantiatedObjects;
         private Dictionary<string, Transform> _doors;
+        private List<DecorationPlaceholder> _decorations;
         private Transform _container;   // the base container for all objects in this room
-
+        private Transform _torchesContainer;
 
 
 
@@ -83,6 +89,10 @@ namespace GameLibrary.Map
                     _brickHeight = GlobalBuildingMaterials.brick001Height;
                     break;
             }
+
+            //InitializeGrid();
+
+            
         }
 
         #region public interface methods
@@ -99,6 +109,30 @@ namespace GameLibrary.Map
             if (!_connectedRooms.Contains(r))
                 _connectedRooms.Add(r);
         }
+        public DecorationPlaceholder AddDecoration(GameObject gameObject, int northPad = 0, int eastPad = 0, int southPad = 0, int westPad = 0)
+        {
+            return AddDecoration(gameObject, FindPositionForRoomObject(northPad, eastPad, southPad, westPad), northPad, eastPad, southPad, westPad);
+        }
+        public DecorationPlaceholder AddDecoration(GameObject gameObject, Vector3 position, int northPad = 0, int eastPad = 0, int southPad = 0, int westPad = 0)
+        {
+            if (_decorations == null) _decorations = new List<DecorationPlaceholder>();
+
+
+
+            List<Vector2> squaresNeeded = new List<Vector2>();
+            squaresNeeded.Add(new Vector2(position.x, position.z));
+            for (int i = 0; i < northPad; i++) squaresNeeded.Add(new Vector2(position.x, position.z + (i + 1)));
+            for (int i = 0; i < southPad; i++) squaresNeeded.Add(new Vector2(position.x, position.z - (i + 1)));
+            for (int i = 0; i < eastPad; i++) squaresNeeded.Add(new Vector2(position.x + (i + 1), position.z));
+            for (int i = 0; i < westPad; i++) squaresNeeded.Add(new Vector2(position.x - (i + 1), position.z));
+
+            AddRoomSquareOccupant(squaresNeeded);
+
+            DecorationPlaceholder dph = new DecorationPlaceholder() { gameObject = gameObject, position = position };
+            _decorations.Add(dph);
+
+            return dph;
+        }
         public void AddDoor(Transform door)
         {
             if (_doors == null) _doors = new Dictionary<string, Transform>();
@@ -107,23 +141,48 @@ namespace GameLibrary.Map
                 _doors.Add(door.name, door);
             }
         }
-        public void AddTeleporter(Teleporter t, bool outbound)
+        public void AddMonster(GameObject monster, int idInRoom)
         {
-            if (outbound)
-            {
-                if (_teleportersOut == null) _teleportersOut = new List<Teleporter>();
-                _teleportersOut.Add(t);
-            }
-            else
-            {
-                if (_teleportersIn == null) _teleportersIn = new List<Teleporter>();
-                _teleportersIn.Add(t);
-            }
+            if (_monsters == null) _monsters = new Dictionary<int, Monster>();
+            Vector3 position = FindPositionForRoomObject();
+            position.y = _floorY; 
+
+            Transform monsterT = UnityEngine.Object.Instantiate(monster, position, Quaternion.Euler(0, 0, 0)).transform;
+            monsterT.tag = "Monster";
+            monsterT.name = string.Format("Monster Id:{0}:{1}", id, idInRoom);
+            monsterT.parent = _container;
+
+            monsterT.gameObject.SetActive(false);
+            _instantiatedObjects.Add(monsterT);
+            _monsters.Add(idInRoom, new Monster(monsterT, id, idInRoom));
+            _roomGrid.UpdateGrid();
+        }
+        public DecorationPlaceholder AddTeleporter(Teleporter t)
+        {
+            if (_teleporters == null) _teleporters = new List<Teleporter>();
+
+            DecorationPlaceholder dph = (t.source == null) ?
+                AddDecoration(GlobalBuildingMaterials.pentagram, 2, 1, 1, 1) :
+                AddDecoration(GlobalBuildingMaterials.pentagram, (Vector3)t.source, 2, 1, 1, 1);
+            t.source = dph.position;
+            _teleporters.Add(t);
+            return dph;
         }
         public void AddTorch(Vector3 v)
         {
             if (_torches == null) _torches = new List<Vector3>();
             _torches.Add(v);
+        }
+        public virtual void DestroyRoom()
+        {
+            if (_container != null) UnityEngine.Object.Destroy(_container.gameObject);
+            foreach (Transform t in _instantiatedObjects)
+            {
+                if (t.gameObject != null) UnityEngine.Object.Destroy(t.gameObject);
+            }
+            _instantiatedObjects = new List<Transform>();
+            _isDrawn = false;
+            _isRendered = false;
         }
         public virtual void DrawRoom()
         {
@@ -142,23 +201,22 @@ namespace GameLibrary.Map
             Transform torchesContainer = DrawTorches();
             if (torchesContainer != null) torchesContainer.parent = _container;
 
+            Transform decorationsContainer = DrawDecorations();
+            if (decorationsContainer != null) decorationsContainer.parent = _container;
+
             Transform roomEntryTrigger = AddRoomEntryTrigger();
             roomEntryTrigger.parent = _container;
 
             _isDrawn = true;
             _isRendered = true;
+            UpdateKillSheet();
+            _roomGrid = new RoomGrid(id, _northEastUp, _southWestDown, 0.25f);
         }
-        public virtual void EraseRoom()
+        public void FadeTorches()
         {
-            if(_container != null) UnityEngine.Object.Destroy(_container.gameObject);
-            foreach (Transform t in _instantiatedObjects)
-            {
-                if (t.gameObject != null) UnityEngine.Object.Destroy(t.gameObject);
-            }
-            _instantiatedObjects = new List<Transform>();
-            _isDrawn = false;
-            _isRendered = false;
+            _torchesContainer.BroadcastMessage("FadeIn");
         }
+
         public List<RoomAdjacency> GetAdjacencies()
         {
             if (_adjacentRooms == null) _adjacentRooms = new List<RoomAdjacency>();
@@ -181,9 +239,25 @@ namespace GameLibrary.Map
             if (direction == Direction.WEST) return _westernEdgeX;
             return 0;
         }
+        public Monster GetMonster(int idInRoom)
+        {
+            Monster m;
+            _monsters.TryGetValue(idInRoom, out m);
+            return m; 
+        }
+        public RoomGrid GetRoomGrid() { return _roomGrid; }
+        public List<Teleporter> GetTeleporters() { return _teleporters;  }
+
+        /// <summary>
+        /// this is only used for debugging
+        /// </summary>
+        public void DrawPathFindingGizmos()
+        {
+            _roomGrid.DrawGizmos();
+        }
         public bool IsCleared()
         {
-            return true; // todo: hook IsCleared into actual enemy destruction
+            return _isCleared;
         }
         public bool IsDrawn()
         {
@@ -205,7 +279,7 @@ namespace GameLibrary.Map
         {
             foreach (Transform thing in _instantiatedObjects)
             {
-                thing.gameObject.SetActive(isActive);
+                if(thing != null) thing.gameObject.SetActive(isActive);
             }
             _isRendered = isActive;
         }
@@ -215,6 +289,23 @@ namespace GameLibrary.Map
             {
                 doorPair.Value.SendMessage("UnlockDoor");
             }
+        }
+        public void UpdateKillSheet()
+        {
+            if(_monsters == null || _monsters.Count == 0)
+            {
+                _isCleared = true;
+                return;
+            }
+            foreach(KeyValuePair<int, Monster> kvp in _monsters)
+            {
+                if(kvp.Value.IsAlive())
+                {
+                    _isCleared = false;
+                    return;
+                }
+            }
+            _isCleared = true;
         }
         #endregion public methods
 
@@ -260,14 +351,54 @@ namespace GameLibrary.Map
             
             colliderTrigger.size = new Vector3(width, _ceilingY - _floorY, depth);
             colliderTrigger.isTrigger = true;
-            colliderTrigger.name = string.Format("rigger collider for room ID:{0}", id);
+            colliderTrigger.name = string.Format("Trigger collider for room ID:{0}", id);
             colliderTrigger.tag = "RoomEntryTrigger";
-            
 
+            triggerContainer.parent = _container;
+            _instantiatedObjects.Add(triggerContainer);
 
             return triggerContainer;
         }
+        private void AddRoomSquareOccupant(List<Vector2> allSquares)
+        {
+            foreach(Vector2 position in allSquares)
+            {
+                AddRoomSquareOccupant(position.x, position.y);
+            }
+        }
+        private void AddRoomSquareOccupant(float x, float z)
+        {
+            int totalColumns = (int)(_easternEdgeX - _westernEdgeX);
+            int totalRows = (int)(_northernEdgeZ - _southernEdgeZ);
+            int rowNumber = (int)(x - _westernEdgeX);
+            int index = (rowNumber * totalColumns) + (int)(z - _southernEdgeZ);
+            //_grid[index] = true;
+            
+        }
+        private Transform DrawDecorations()
+        {
+            if (_decorations == null) return null;
 
+            Transform container = new GameObject().transform;
+            container.name = string.Format("Room {0} decorations container", id);
+
+            foreach (DecorationPlaceholder d in _decorations)
+            {
+                Transform t = UnityEngine.Object.Instantiate(d.gameObject, d.position, Quaternion.Euler(0, 0, 0)).transform;
+                t.name = d.name;
+                if (t.tag == "baseMaterial" || t.gameObject.tag == "baseMaterial") SetColor(t);
+                for (int i = 0; i < t.childCount; i++)
+                {
+                    Transform child = t.GetChild(i);
+                    if (child.tag == "baseMaterial") SetColor(child);
+                }
+                t.parent = container;
+                t.gameObject.layer = LayerMask.NameToLayer(GlobalMapParameters.unwalkableLayerName);
+                //t.gameObject.SetActive(false);
+                _instantiatedObjects.Add(t);
+            }
+            return container;
+        }
         private Transform DrawFloor()
         {
             Transform floorContainer = new GameObject().transform;
@@ -536,21 +667,20 @@ namespace GameLibrary.Map
             Transform container = new GameObject().transform;
             container.name = string.Format("Room {0} columns container", id);
 
-            Transform column1 = SetColumn(new Vector3(_easternEdgeX, 1 + _tileHeight, _southernEdgeZ), Quaternion.Euler(90, 0, 0)); // SE column
-            Transform column2 = SetColumn(new Vector3(_easternEdgeX, 1 + _tileHeight, _northernEdgeZ), Quaternion.Euler(90, 0, 0)); // NE column
-            Transform column3 = SetColumn(new Vector3(_westernEdgeX, 1 + _tileHeight, _northernEdgeZ), Quaternion.Euler(90, 0, 0)); // NW column
-            Transform column4 = SetColumn(new Vector3(_westernEdgeX, 1 + _tileHeight, _southernEdgeZ), Quaternion.Euler(90, 0, 0)); // SW column
+            Transform column1 = SetColumn(new Vector3(_easternEdgeX, 1 + _tileHeight + _floorY, _southernEdgeZ), Quaternion.Euler(90, 0, 0)); // SE column
+            Transform column2 = SetColumn(new Vector3(_easternEdgeX, 1 + _tileHeight + _floorY, _northernEdgeZ), Quaternion.Euler(90, 0, 0)); // NE column
+            Transform column3 = SetColumn(new Vector3(_westernEdgeX, 1 + _tileHeight + _floorY, _northernEdgeZ), Quaternion.Euler(90, 0, 0)); // NW column
+            Transform column4 = SetColumn(new Vector3(_westernEdgeX, 1 + _tileHeight + _floorY, _southernEdgeZ), Quaternion.Euler(90, 0, 0)); // SW column
             column1.parent = container;
             column2.parent = container;
             column3.parent = container;
             column4.parent = container;
-
             return container;
         }
         private Transform DrawTorches()
         {
-            Transform container = new GameObject().transform;
-            container.name = string.Format("Room {0} torches container", id);
+            _torchesContainer = new GameObject().transform;
+            _torchesContainer.name = string.Format("Room {0} torches container", id);
 
             if (_torches == null) _torches = new List<Vector3>();
             foreach (Vector3 v in _torches)
@@ -568,12 +698,57 @@ namespace GameLibrary.Map
 
 
                 Transform torch = SetTorch(v, rotation);
-                torch.parent = container;
+                torch.parent = _torchesContainer;
             }
 
-            return container;
+            return _torchesContainer;
         }
+        private Vector3 FindPositionForRoomObject(int northPad = 0, int eastPad = 0, int southPad = 0, int westPad = 0)
+        {
+            if(_roomGrid == null) _roomGrid = new RoomGrid(id, _northEastUp, _southWestDown, 0.25f);
 
+
+            int x = RNG.getRandomInt((int)_westernEdgeX + 1, (int)_easternEdgeX - 1);   // todo: make objects able to go to the wall
+            int z = RNG.getRandomInt((int)_southernEdgeZ + 1, (int)_northernEdgeZ - 1);
+
+            bool isClear = true;
+            List<Vector2> squaresNeeded = new List<Vector2>();
+            squaresNeeded.Add(new Vector2(x, z));
+            for (int i = 0; i < northPad; i++) squaresNeeded.Add(new Vector2(x, z + (i + 1)));
+            for (int i = 0; i < southPad; i++) squaresNeeded.Add(new Vector2(x, z - (i + 1)));
+            for (int i = 0; i < eastPad; i++) squaresNeeded.Add(new Vector2(x + (i + 1), z));
+            for (int i = 0; i < westPad; i++) squaresNeeded.Add(new Vector2(x - (i + 1), z));
+
+            foreach(Vector2 square in squaresNeeded)
+            {
+                if (!_roomGrid.GetNodeFromWorldPosition(new Vector3(x, _floorY, z)).isWalkable)
+                {
+                    isClear = false;
+                    break;
+                }
+            }
+            if (isClear)
+            {
+                return new Vector3(x, _floorY, z);
+            }
+            else return FindPositionForRoomObject(northPad, eastPad, southPad, westPad);
+        }
+        //private void InitializeGrid()
+        //{
+        //    int totalColumns = (int)(_easternEdgeX - _westernEdgeX) + 1;
+        //    int totalRows = (int)(_northernEdgeZ - _southernEdgeZ) + 1;
+        //    int numSquares = totalColumns * totalRows;
+        //    _grid = new bool[numSquares];
+        //}
+        //private bool isRoomSquareOccupied(float x, float z)
+        //{
+        //    return !_roomGrid.GetNodeFromWorldPosition(new Vector3(x, _floorY, z)).isWalkable;
+        //    //int totalColumns = (int)(_easternEdgeX - _westernEdgeX) +1;
+        //    //int totalRows = (int)(_northernEdgeZ - _southernEdgeZ) +1;
+        //    //int rowNumber = (int)(z - _southernEdgeZ);
+        //    //int index = (rowNumber * totalColumns) + (int)(x - _westernEdgeX);
+        //    ////return _grid[index];
+        //}
         private Transform SetTile(Vector3 position)
         {
             Transform thisTile = UnityEngine.Object.Instantiate(GlobalBuildingMaterials.tile001, position, Quaternion.Euler(-90, 0, 0)).AddComponent<BoxCollider>().transform;
@@ -588,6 +763,7 @@ namespace GameLibrary.Map
             else thisBrick = UnityEngine.Object.Instantiate(GlobalBuildingMaterials.brick001, position, rotation).AddComponent<BoxCollider>().transform;
             _instantiatedObjects.Add(thisBrick);
             SetColor(thisBrick);
+            thisBrick.gameObject.layer = LayerMask.NameToLayer(GlobalMapParameters.unwalkableLayerName);
             return thisBrick;
         }
         private Transform SetColumn(Vector3 position, Quaternion rotation)
@@ -595,6 +771,7 @@ namespace GameLibrary.Map
             Transform thisColumn = UnityEngine.Object.Instantiate(GlobalBuildingMaterials.column001, position, rotation).AddComponent<BoxCollider>().transform;
             _instantiatedObjects.Add(thisColumn);
             SetColor(thisColumn);
+            thisColumn.gameObject.layer = LayerMask.NameToLayer(GlobalMapParameters.unwalkableLayerName);
             return thisColumn;
         }
         private Transform SetTorch(Vector3 position, Quaternion rotation)

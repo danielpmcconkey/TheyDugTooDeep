@@ -10,6 +10,7 @@ namespace GameLibrary.Map
         private static Level _currentLevel;
         private static int _currentRoomId;
         private static Room _currentRoom;
+        private static Transform _player;
 
         public static Dictionary<int, Level> levels
         {
@@ -22,14 +23,21 @@ namespace GameLibrary.Map
         {
             _levels = new Dictionary<int, Level>();
         }
-        public static void AddLevel(int levelNumber, Level newLevel)
+        public static void AddLevel(Level newLevel)
         {
-            if (_levels.ContainsKey(levelNumber))
+            if (_levels.ContainsKey(newLevel.levelNumber))
             {
-                Debug.LogError(string.Format("Level {0} already exists.", levelNumber));
+                Debug.LogError(string.Format("Level {0} already exists.", newLevel.levelNumber));
             }
-            newLevel.levelNumber = levelNumber; // make sure they match
-            _levels.Add(levelNumber, newLevel);
+            _levels.Add(newLevel.levelNumber, newLevel);
+        }
+        public static Transform GetPlayer()
+        {
+            return _player;
+        }
+        public static void SetPlayer(Transform player)
+        {
+            _player = player;
         }
         public static Level GetLevel(int levelNumber)
         {
@@ -45,6 +53,7 @@ namespace GameLibrary.Map
         }
         public static Room GetCurrentRoom()
         {
+            if(_currentLevel == null) return null;  // the portal room exists before any levels
             Room returnVal = null;
             GetCurrentLevel().rooms.TryGetValue(_currentRoomId, out returnVal);
             return returnVal;
@@ -56,6 +65,7 @@ namespace GameLibrary.Map
         }
         public static void SetCurrentRoomId(int roomId)
         {
+            if (_currentLevel == null) return;  // the portal room exists before any levels
             _currentRoomId = roomId;
             _currentLevel.rooms.TryGetValue(_currentRoomId, out _currentRoom);
         }

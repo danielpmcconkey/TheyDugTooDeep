@@ -6,6 +6,9 @@ namespace GameLibrary.Map
 {
     public static class GlobalBuildingMaterials
     {
+        public static GameObject roomEntryTrigger;
+
+        #region tilesets
         public static GameObject tile001;
         public static float tile001Width;           // distance along the x axis
         public static float tile001Depth;           // distance along the z axis
@@ -20,7 +23,12 @@ namespace GameLibrary.Map
         public static GameObject column001;
         public static GameObject torch001;
 
-        public static GameObject roomEntryTrigger;
         public static GameObject door001;
+        public static GameObject pentagram;
+        #endregion tilesets
+
+        #region characters
+        public static GameObject MonsterToken;
+        #endregion characters
     }
 }

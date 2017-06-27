@@ -17,8 +17,9 @@ namespace GameLibrary.Map
         private Transform _container;
 
         
-        public Level(Vector3 startingPoint)
+        public Level(Vector3 startingPoint, int num)
         {
+            levelNumber = num;
             InitializeGrid();
             _rooms = new Dictionary<int, Room>();
             _startingPoint = startingPoint;
@@ -34,7 +35,7 @@ namespace GameLibrary.Map
         }
 
         #region // public interface methods
-        public bool CreateRooms()
+        public void CreateRooms()
         {
             int tileSet = 1; // todo: do something about tilesets
 
@@ -61,38 +62,74 @@ namespace GameLibrary.Map
             Transform doorsContainer = AddDoors();
             doorsContainer.parent = _container;
             doorsContainer.gameObject.SetActive(false); // this is done because doors aren't rendered as needed, so you want to prevent doors from other levels from displaying
-
-           
-
-
-
-            return true;
-            
-
         }
         public void DecorateRooms()
         {
             foreach(KeyValuePair<int, Room> entry in _rooms) AddTorchesToRoom(entry.Value);
+            // add the starting pentagram
+            Teleporter t = new Teleporter()
+            {
+                sourceRoom = rooms[0],
+                source = new Vector3(0, 0, 0),
+                destinationRoom = null
+            };
+            DecorationPlaceholder dph = rooms[0].AddTeleporter(t);
+            dph.name = string.Empty;
         }
-
-        public void DrawLevel()
+        public void PopulateRooms()
         {
-            _container.FindChild(string.Format("Level {0} doors container", levelNumber)).gameObject.SetActive(true); // only render the doors for the current level
-            for (int i = 0; i < _rooms.Count; i++)
+            for(int i = 0; i < _numMainRooms; i++)
             {
-                if (!_rooms[i].IsDrawn()) _rooms[i].DrawRoom();
-                _rooms[i].RenderRoomObjects(false);
+                Room r = _rooms[i];
+                float width = r.GetEdge(Direction.EAST) - r.GetEdge(Direction.WEST);
+                float depth = r.GetEdge(Direction.NORTH) - r.GetEdge(Direction.SOUTH);
+                float area = width * depth;
+                int maxMonsters = (int)Mathf.Floor(area / 20);
+                int minMonsters = (int)Mathf.Floor(area / 40);
+                int numMonsters = RNG.getRandomInt(minMonsters, maxMonsters);
+                if (!r.IsDrawn()) r.DrawRoom(); // do this to create the grid so we can detect object collisions
+                for (int j = 0; j < numMonsters; j++)
+                {
+                    r.AddMonster(GlobalBuildingMaterials.MonsterToken, j);
+                }
             }
-            _rooms[0].RenderRoomObjects(true);
-            _rooms[0].UnlockDoors();
-
-            // parent rooms to _container
+        }
+        public void RenderDoors(bool isActive)
+        {
+            _container.Find(string.Format("Level {0} doors container", levelNumber)).gameObject.SetActive(isActive);
+        }
+        public void RenderEntireLevel(bool isActive)
+        {
+            RenderDoors(isActive);
             for (int i = 0; i < _rooms.Count; i++)
             {
-                _rooms[i].GetContainer().parent = _container;
+                if (!_rooms[i].IsDrawn())
+                {
+                    _rooms[i].DrawRoom(); // always make sure the room is drawn, even if you just want to deactive it
+                    _rooms[i].GetContainer().parent = _container; //parent room to _container
+                }
+                _rooms[i].RenderRoomObjects(isActive);
             }
 
         }
+        //public void DrawLevel()
+        //{
+        //    _container.Find(string.Format("Level {0} doors container", levelNumber)).gameObject.SetActive(true); // only render the doors for the current level
+        //    for (int i = 0; i < _rooms.Count; i++)
+        //    {
+        //        if (!_rooms[i].IsDrawn()) _rooms[i].DrawRoom();
+        //        _rooms[i].RenderRoomObjects(false);
+        //    }
+        //    _rooms[0].RenderRoomObjects(true);
+        //    //_rooms[0].UnlockDoors();
+
+        //    // parent rooms to _container
+        //    for (int i = 0; i < _rooms.Count; i++)
+        //    {
+        //        _rooms[i].GetContainer().parent = _container;
+        //    }
+
+        //}
         #endregion // public methods
 
 
@@ -171,7 +208,7 @@ namespace GameLibrary.Map
                         float gModifier = (float)RNG.getRandomInt(0, GlobalMapParameters.colorVarianceMax) / 100;
                         float bModifier = (float)RNG.getRandomInt(0, GlobalMapParameters.colorVarianceMax) / 100;
 
-                        door.FindChild("door001_frame").GetComponent<Renderer>().material.color = new Color(_baseColor.r + rModifier, _baseColor.g + gModifier, _baseColor.b + bModifier);
+                        door.Find("door001_frame").GetComponent<Renderer>().material.color = new Color(_baseColor.r + rModifier, _baseColor.g + gModifier, _baseColor.b + bModifier);
 
                         door.parent = container;
                     }
@@ -509,7 +546,7 @@ namespace GameLibrary.Map
                 if (IsThereSpaceForTheRoom(room, true)) roomPlaced = true;
                 else
                 {
-                    room.EraseRoom();
+                    room.DestroyRoom();
                     room = null;
                 }
             }
@@ -541,12 +578,18 @@ namespace GameLibrary.Map
                     List<int> destinationLoop = closedLoops[(i < closedLoops.Count - 1) ? i + 1 : 0];
                     Room r1 = _rooms[sourceLoop[sourceLoop.Count - 1]]; // last room in source loop
                     Room r2 = _rooms[destinationLoop[0]]; // first room in destination loop
-                                                          // todo: set teleporters in rooms more intelligently 
-                    Vector3 source = new Vector3(r1.GetEdge(Direction.EAST - 1), 0, r1.GetEdge(Direction.NORTH - 1));
-                    Vector3 destination = new Vector3(r2.GetEdge(Direction.WEST + 1), 0, r1.GetEdge(Direction.SOUTH + 1));
-                    Teleporter t = new Teleporter() { source = source, destination = destination, active = false };
-                    r1.AddTeleporter(t, true);
-                    r2.AddTeleporter(t, false);
+
+                    Teleporter t1 = new Teleporter() { sourceRoom = r1, source = null, destinationRoom = r2, destination = null };
+                    Teleporter t2 = new Teleporter() { sourceRoom = r2, source = null, destinationRoom = r1, destination = null };
+                    DecorationPlaceholder dph1 = r1.AddTeleporter(t1);
+                    DecorationPlaceholder dph2 = r2.AddTeleporter(t2);
+                    dph1.name = string.Format("Teleporter|{0}|{1}|{2}", dph2.position.x, dph2.position.y + 1, dph2.position.z);
+                    dph2.name = string.Format("Teleporter|{0}|{1}|{2}", dph1.position.x, dph1.position.y + 1, dph1.position.z);
+
+                    //t1.source = dph1.position;
+                    //t1.destination = t2Location;
+                    //t2.source = t2Location;
+                    //t2.destination = t1Location;
                 }
             }
         }
