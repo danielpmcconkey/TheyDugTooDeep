@@ -10,7 +10,8 @@ namespace GameLibrary.Map
         private Direction _direction;
         public Direction direction { get { return _direction; } set { _direction = value;  } }
 
-        public Corridor(int id, Vector3 southWestDown, Vector3 northEastUp, int tileSet, Color baseColor, Direction direction) : base (id, southWestDown, northEastUp, tileSet, baseColor)
+        public Corridor(int id, Vector3 southWestDown, Vector3 northEastUp, int tileSet, Color baseColor, Transform levelMinimapContainer, Direction direction) 
+            : base (id, southWestDown, northEastUp, tileSet, baseColor, levelMinimapContainer)
         {
             _direction = direction;
         }

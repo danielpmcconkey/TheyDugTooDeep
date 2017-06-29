@@ -25,6 +25,8 @@ namespace GameLibrary.Map
 
         public static GameObject door001;
         public static GameObject pentagram;
+
+        
         #endregion tilesets
 
         #region characters

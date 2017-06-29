@@ -1,4 +1,6 @@
-﻿using System.Collections;
+﻿#define DRAW_MAP
+
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using GameLibrary.Helpers;
@@ -15,9 +17,10 @@ namespace GameLibrary.Map
         private int _numMainRooms;
         private Color _baseColor;
         private Transform _container;
+        private Transform _miniMapContainer;
 
         
-        public Level(Vector3 startingPoint, int num)
+        public Level(Vector3 startingPoint, int num, Color? baseColor = null)
         {
             levelNumber = num;
             InitializeGrid();
@@ -28,17 +31,19 @@ namespace GameLibrary.Map
             float r = (float)RNG.getRandomInt(0, 100) / 100;
             float g = (float)RNG.getRandomInt(0, 100) / 100;
             float b = (float)RNG.getRandomInt(0, 100) / 100;
-            _baseColor = new Color(r, g, b);
+            _baseColor = (baseColor == null) ? new Color(r, g, b) : (Color)baseColor;
 
             _container = new GameObject().transform;
             _container.name = string.Format("Level {0} container", levelNumber);
+            _miniMapContainer = new GameObject().transform;
+            _miniMapContainer.name = string.Format("Level {0} minimap container", levelNumber);
+
         }
 
         #region // public interface methods
-        public void CreateRooms()
+        public void CreateStarterRoom(int tileSet)
         {
-            int tileSet = 1; // todo: do something about tilesets
-
+            // this is split out because the portal level only needs a starter room
             // starter room
             // starter room is always startingRoomRadius meters in each direction around the starting point
             float northEdge = _startingPoint.z + GlobalMapParameters.startingRoomRadius;
@@ -46,27 +51,21 @@ namespace GameLibrary.Map
             float eastEdge = _startingPoint.x + GlobalMapParameters.startingRoomRadius;
             float westEdge = _startingPoint.x - GlobalMapParameters.startingRoomRadius;
 
-            
-            Room starterRoom = new Room(0, new Vector3(westEdge, _startingPoint.y, southEdge), new Vector3(eastEdge, GlobalMapParameters.roomHeight, northEdge), tileSet, _baseColor);
+
+            Room starterRoom = new Room(0, new Vector3(westEdge, _startingPoint.y, southEdge)
+                , new Vector3(eastEdge, GlobalMapParameters.roomHeight, northEdge), tileSet, _baseColor, _miniMapContainer);
             PopulateGridSquares(starterRoom);
             _rooms.Add(0, starterRoom);
-
-            for (int i = 1; i < _numMainRooms; i++) // added 1 room already
-            {
-                Room room = CreateRoom(i, tileSet);
-                _rooms.Add(i, room);
-            }
-            CreateCorridors(tileSet);
-            CreateRightAngleConnections(tileSet);
-            CreateTeleportersForClosedLoops();
-            Transform doorsContainer = AddDoors();
-            doorsContainer.parent = _container;
-            doorsContainer.gameObject.SetActive(false); // this is done because doors aren't rendered as needed, so you want to prevent doors from other levels from displaying
         }
-        public void DecorateRooms()
+
+
+        public void CreateRooms()
         {
-            foreach(KeyValuePair<int, Room> entry in _rooms) AddTorchesToRoom(entry.Value);
-            // add the starting pentagram
+            int tileSet = 1;
+            CreateStarterRoom(tileSet);
+            
+
+            // add the starting pentagram before you create other rooms so that the closed-loop teleporters don't collide
             Teleporter t = new Teleporter()
             {
                 sourceRoom = rooms[0],
@@ -75,6 +74,83 @@ namespace GameLibrary.Map
             };
             DecorationPlaceholder dph = rooms[0].AddTeleporter(t);
             dph.name = string.Empty;
+
+
+            for (int i = 1; i < _numMainRooms; i++) // added 1 room already
+            {
+                Room room = CreateRoom(i, tileSet);
+                _rooms.Add(i, room);
+            }
+            CreateCorridors(tileSet);
+            CreateRightAngleConnections(tileSet);
+#if (DEBUG && DRAW_MAP)
+            DrawMapToTextFile();
+#endif
+            CreateTeleportersForClosedLoops();
+            Transform doorsContainer = AddDoors();
+            doorsContainer.parent = _container;
+            doorsContainer.gameObject.SetActive(false); // this is done because doors aren't rendered as needed, so you want to prevent doors from other levels from displaying
+        }
+#if (DEBUG && DRAW_MAP)
+        private void DrawMapToTextFile()
+        {
+            char[,] roomsIdsGrid = new char[GlobalMapParameters.mapSize * 2, GlobalMapParameters.mapSize * 2];
+            for(int i = 0; i < GlobalMapParameters.mapSize *2; i++)
+            {
+                for(int j = 0; j < GlobalMapParameters.mapSize * 2; j ++)
+                {
+                    roomsIdsGrid[i, j] = ' ';
+                }
+            }
+            foreach(KeyValuePair<int, Room> kvp in _rooms)
+            {
+                int id = kvp.Key;
+                Room r = kvp.Value;
+                // north and south walls
+                for (int i = (int)r.GetEdge(Direction.WEST) + GlobalMapParameters.mapSize; i <= (int)r.GetEdge(Direction.EAST) + GlobalMapParameters.mapSize; i++)
+                {
+                    roomsIdsGrid[i, (int)r.GetEdge(Direction.NORTH) + GlobalMapParameters.mapSize] = '-';
+                    roomsIdsGrid[i, (int)r.GetEdge(Direction.SOUTH) + GlobalMapParameters.mapSize] = '-';
+                }
+                // east and west walls
+                for (int i = (int)r.GetEdge(Direction.SOUTH) + GlobalMapParameters.mapSize; i <= (int)r.GetEdge(Direction.NORTH) + GlobalMapParameters.mapSize; i++)
+                {
+                    roomsIdsGrid[(int)r.GetEdge(Direction.EAST) + GlobalMapParameters.mapSize, i] = '|';
+                    roomsIdsGrid[(int)r.GetEdge(Direction.WEST) + GlobalMapParameters.mapSize, i] = '|';
+                }
+                // put IDs in center
+                int width = Mathf.RoundToInt(r.GetEdge(Direction.EAST) - r.GetEdge(Direction.WEST));
+                int depth = Mathf.RoundToInt(r.GetEdge(Direction.NORTH) - r.GetEdge(Direction.SOUTH));
+                int centerX = Mathf.RoundToInt(r.GetEdge(Direction.WEST) + (width / 2)) + GlobalMapParameters.mapSize;
+                int centerY = Mathf.RoundToInt(r.GetEdge(Direction.SOUTH) + (depth / 2)) + GlobalMapParameters.mapSize;
+                char[] idToChars = id.ToString().ToCharArray();
+                if (id < 10) roomsIdsGrid[centerX, centerY] = idToChars[0];
+                else
+                {
+                    roomsIdsGrid[centerX, centerY] = idToChars[0];
+                    roomsIdsGrid[centerX + 1, centerY] = idToChars[1];
+                }
+            }
+            using (System.IO.StreamWriter sw = new System.IO.StreamWriter("E:\\test.txt"))
+            {
+                for(int y = (GlobalMapParameters.mapSize * 2) - 1; y >= 0; y--)    // go down to up because lower numbers in unity are at the "bottom"
+                {
+                    for(int x = 0; x < GlobalMapParameters.mapSize * 2; x++)
+                    {
+                        sw.Write(roomsIdsGrid[x, y]);
+                    }
+                    sw.Write(System.Environment.NewLine);
+                }
+            }
+        }
+#endif
+        public void DecorateRooms()
+        {
+            foreach(KeyValuePair<int, Room> entry in _rooms) AddTorchesToRoom(entry.Value);
+        }
+        public void RenderMinimap(bool isActive)
+        {
+            _miniMapContainer.gameObject.SetActive(isActive);
         }
         public void PopulateRooms()
         {
@@ -96,7 +172,8 @@ namespace GameLibrary.Map
         }
         public void RenderDoors(bool isActive)
         {
-            _container.Find(string.Format("Level {0} doors container", levelNumber)).gameObject.SetActive(isActive);
+            Transform doorsContainer = _container.Find(string.Format("Level {0} doors container", levelNumber));
+            if(doorsContainer!= null) doorsContainer.gameObject.SetActive(isActive);
         }
         public void RenderEntireLevel(bool isActive)
         {
@@ -112,24 +189,6 @@ namespace GameLibrary.Map
             }
 
         }
-        //public void DrawLevel()
-        //{
-        //    _container.Find(string.Format("Level {0} doors container", levelNumber)).gameObject.SetActive(true); // only render the doors for the current level
-        //    for (int i = 0; i < _rooms.Count; i++)
-        //    {
-        //        if (!_rooms[i].IsDrawn()) _rooms[i].DrawRoom();
-        //        _rooms[i].RenderRoomObjects(false);
-        //    }
-        //    _rooms[0].RenderRoomObjects(true);
-        //    //_rooms[0].UnlockDoors();
-
-        //    // parent rooms to _container
-        //    for (int i = 0; i < _rooms.Count; i++)
-        //    {
-        //        _rooms[i].GetContainer().parent = _container;
-        //    }
-
-        //}
         #endregion // public methods
 
 
@@ -309,7 +368,7 @@ namespace GameLibrary.Map
                     }
                 }
             }
-            // try for a second connection where possible todo: DRY this code
+            // try for a second connection where possible
             for (int i = 0; i < _numMainRooms; i++) // can't foreach the list because you add to it while you're doing it
             {
                 RoomConnection connection = FindRoomToConnect(_rooms[i], tileSet);
@@ -334,6 +393,8 @@ namespace GameLibrary.Map
                         room = connection.connectedRoom,
                         adjacentWall = connection.corridor.direction
                     });
+                    connection.starterRoom.AddConnection(connection.connectedRoom);
+                    connection.connectedRoom.AddConnection(connection.starterRoom);
                 }
             }
         }
@@ -427,7 +488,8 @@ namespace GameLibrary.Map
                                                 new Vector3(cpWestEdge, 0, cpSouthEdge),
                                                 new Vector3(cpEastEdge, GlobalMapParameters.roomHeight, cpNorthEdge),
                                                 tileSet,
-                                                _baseColor
+                                                _baseColor,
+                                                _miniMapContainer
                                                 );
                             if (IsThereSpaceForTheRoom(centerPoint, true))
                             {
@@ -442,6 +504,7 @@ namespace GameLibrary.Map
                                                 new Vector3(zLegEastEdge, GlobalMapParameters.roomHeight, zLegNorthEdge),
                                                 tileSet,
                                                 _baseColor,
+                                                _miniMapContainer,
                                                 Direction.NORTH
                                                 );
                                 if (IsThereSpaceForTheRoom(zLeg))
@@ -457,6 +520,7 @@ namespace GameLibrary.Map
                                                     new Vector3(xLegEastEdge, GlobalMapParameters.roomHeight, xLegNorthEdge),
                                                     tileSet,
                                                     _baseColor,
+                                                    _miniMapContainer,
                                                     Direction.EAST
                                                     );
                                     if (IsThereSpaceForTheRoom(xLeg))
@@ -540,7 +604,8 @@ namespace GameLibrary.Map
                     new Vector3(westEdge, _startingPoint.y, southEdge),
                     new Vector3(eastEdge, GlobalMapParameters.roomHeight, northEdge),
                     tileSet,
-                    _baseColor
+                    _baseColor,
+                    _miniMapContainer
                     );
 
                 if (IsThereSpaceForTheRoom(room, true)) roomPlaced = true;
@@ -572,10 +637,10 @@ namespace GameLibrary.Map
              * ******************************************************/
             if (closedLoops != null)
             {
-                for (int i = 0; i < closedLoops.Count; i++)
+                for (int i = 0; i < closedLoops.Count; i+=2)    // because you create both teleporters below, try to work in pairs 
                 {
                     List<int> sourceLoop = closedLoops[i];
-                    List<int> destinationLoop = closedLoops[(i < closedLoops.Count - 1) ? i + 1 : 0];
+                    List<int> destinationLoop = closedLoops[(i < closedLoops.Count - 1) ? i + 1 : 0]; // if you have an odd number of loops, take the last back to the first
                     Room r1 = _rooms[sourceLoop[sourceLoop.Count - 1]]; // last room in source loop
                     Room r2 = _rooms[destinationLoop[0]]; // first room in destination loop
 
@@ -687,6 +752,7 @@ namespace GameLibrary.Map
                                                 new Vector3(eastEdge, GlobalMapParameters.roomHeight, northEdge),
                                                 tileSet,
                                                 _baseColor,
+                                                _miniMapContainer,
                                                 ds.Primary
                                                 );
 

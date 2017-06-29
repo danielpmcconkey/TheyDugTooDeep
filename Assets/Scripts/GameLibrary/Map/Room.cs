@@ -38,7 +38,7 @@ namespace GameLibrary.Map
         private Color _baseColor;
         #endregion skin members
 
-        public Dictionary<int, Monster> _monsters; // todo: turn _monsters back to private
+        public Dictionary<int, Monster> _monsters;
         
         private List<RoomAdjacency> _adjacentRooms;
         private List<Room> _connectedRooms;
@@ -52,11 +52,12 @@ namespace GameLibrary.Map
         private List<DecorationPlaceholder> _decorations;
         private Transform _container;   // the base container for all objects in this room
         private Transform _torchesContainer;
+        private Transform _levelMinimapContainer;
+        private Transform _roomMinimapContainer;
 
 
 
-
-        public Room(int id, Vector3 southWestDown, Vector3 northEastUp, int tileSet, Color baseColor)
+        public Room(int id, Vector3 southWestDown, Vector3 northEastUp, int tileSet, Color baseColor, Transform levelMinimapContainer)
         {
             this.id = id;
 
@@ -91,8 +92,13 @@ namespace GameLibrary.Map
             }
 
             //InitializeGrid();
-
+            _levelMinimapContainer = levelMinimapContainer;
+            _roomMinimapContainer = new GameObject().transform;
+            if (_levelMinimapContainer != null) _roomMinimapContainer.parent = _levelMinimapContainer;
             
+
+
+
         }
 
         #region public interface methods
@@ -141,6 +147,18 @@ namespace GameLibrary.Map
                 _doors.Add(door.name, door);
             }
         }
+        public void AddLevelAdvanceTeleporter(Vector3 position, Vector3 targetPosition, int newLevelId)
+        {
+            Transform t = UnityEngine.Object.Instantiate(GlobalBuildingMaterials.pentagram, position, Quaternion.Euler(0, 0, 0)).transform;
+            t.parent = _container;
+            _instantiatedObjects.Add(t);
+            for(int i = 0; i < t.childCount; i++)
+            {
+                Transform child = t.GetChild(i);
+                if (child.tag == "Teleporter") child.tag = "LevelAdvanceTeleporter";
+            }
+            t.name = string.Format("LevelAdvanceTeleporter|{0}|{1}|{2}|{3}", targetPosition.x, targetPosition.y + 1, targetPosition.z, newLevelId);
+        }
         public void AddMonster(GameObject monster, int idInRoom)
         {
             if (_monsters == null) _monsters = new Dictionary<int, Monster>();
@@ -162,8 +180,8 @@ namespace GameLibrary.Map
             if (_teleporters == null) _teleporters = new List<Teleporter>();
 
             DecorationPlaceholder dph = (t.source == null) ?
-                AddDecoration(GlobalBuildingMaterials.pentagram, 2, 1, 1, 1) :
-                AddDecoration(GlobalBuildingMaterials.pentagram, (Vector3)t.source, 2, 1, 1, 1);
+                AddDecoration(GlobalBuildingMaterials.pentagram, 6, 4, 4, 4) :
+                AddDecoration(GlobalBuildingMaterials.pentagram, (Vector3)t.source, 6, 4, 4, 4);
             t.source = dph.position;
             _teleporters.Add(t);
             return dph;
@@ -188,6 +206,7 @@ namespace GameLibrary.Map
         {
             _container = new GameObject().transform;
             _container.name = string.Format("Room {0} container", id); // putting this here because rooms are created to see if they fit and then quickly destroyed
+            if (_levelMinimapContainer == null) _roomMinimapContainer.parent = _container;
 
             Transform floorContainer = DrawFloor();
             floorContainer.parent = _container;
@@ -253,7 +272,7 @@ namespace GameLibrary.Map
         /// </summary>
         public void DrawPathFindingGizmos()
         {
-            _roomGrid.DrawGizmos();
+            if(_roomGrid != null)_roomGrid.DrawGizmos();
         }
         public bool IsCleared()
         {
@@ -285,9 +304,12 @@ namespace GameLibrary.Map
         }
         public void UnlockDoors()
         {
-            foreach (KeyValuePair<string, Transform> doorPair in _doors)
+            if (_doors != null)
             {
-                doorPair.Value.SendMessage("UnlockDoor");
+                foreach (KeyValuePair<string, Transform> doorPair in _doors)
+                {
+                    doorPair.Value.SendMessage("UnlockDoor");
+                }
             }
         }
         public void UpdateKillSheet()
@@ -423,19 +445,27 @@ namespace GameLibrary.Map
             container.name = string.Format("Room {0} wall segment container", id);
 
 
-            //float widthX = (end.x - begin.x == 0) ? GlobalMapParameters.lightBlockerWidth : end.x - begin.x;
-            //float centerX = begin.x + (widthX / 2);
-            //float widthY = end.y - begin.y;
-            //float centerY = begin.y + (widthY / 2);
-            //float widthZ = (end.z - begin.z == 0) ? GlobalMapParameters.lightBlockerWidth : end.z - begin.z;
-            //float centerZ = begin.z + (widthZ / 2);
-            //Transform lightBlocker = GameObject.CreatePrimitive(PrimitiveType.Cube).transform;
-            //lightBlocker.parent = container;
-            //lightBlocker.position = new Vector3(centerX, centerY, centerZ);
-            //lightBlocker.localScale = new Vector3(widthX, widthY, widthZ);
 
+            // draw the minimap lines
+            GameObject gameObject = new GameObject();
+            LineRenderer line = gameObject.AddComponent<LineRenderer>();
+            line.positionCount = 2;
+            line.SetPosition(0, new Vector3(begin.x, _floorY, begin.z));
+            line.SetPosition(1, new Vector3(end.x, _floorY, end.z));
+            line.startWidth = 1.0f;
+            line.endWidth = 1.0f;
+            line.useWorldSpace = true;
+            //line.material = GlobalBuildingMaterials.miniMapLineMaterial;
+            line.startColor = Color.red;
+            line.endColor = Color.red;
+            gameObject.layer = LayerMask.NameToLayer("Minimap");
+            gameObject.transform.parent = _roomMinimapContainer;
 
             
+
+
+
+            // now draw the real stuff
 
             float yCenterOffset = _brickHeight / 2;
             bool brickOffset = false; // sets the alternating brick pattern
@@ -708,7 +738,7 @@ namespace GameLibrary.Map
             if(_roomGrid == null) _roomGrid = new RoomGrid(id, _northEastUp, _southWestDown, 0.25f);
 
 
-            int x = RNG.getRandomInt((int)_westernEdgeX + 1, (int)_easternEdgeX - 1);   // todo: make objects able to go to the wall
+            int x = RNG.getRandomInt((int)_westernEdgeX + 1, (int)_easternEdgeX - 1);
             int z = RNG.getRandomInt((int)_southernEdgeZ + 1, (int)_northernEdgeZ - 1);
 
             bool isClear = true;
