@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using GameLibrary.Map;
+using GameLibrary.Helpers;
 
 public class CharacterCollisions : MonoBehaviour {
 
@@ -21,6 +22,13 @@ public class CharacterCollisions : MonoBehaviour {
                 if (Time.time >= _lastTeleport + teleportCooldownSeconds)
                 {
                     Teleport(other.transform.parent.name);
+                    _lastTeleport = Time.time;
+                }
+                break;
+            case "LevelAdvanceTeleporter":
+                if (Time.time >= _lastTeleport + teleportCooldownSeconds)
+                {
+                    LevelAdvanceTeleport(other.transform.parent.name);
                     _lastTeleport = Time.time;
                 }
                 break;
@@ -48,6 +56,24 @@ public class CharacterCollisions : MonoBehaviour {
                 if (t.destinationRoom != null && !t.destinationRoom.IsRendered()) t.destinationRoom.RenderRoomObjects(true);
             }
         }
+        transform.position = to;
+    }
+    private void LevelAdvanceTeleport(string tName)
+    {
+        string[] nameSplit = tName.Split('|');
+        Vector3 to = new Vector3(int.Parse(nameSplit[1]), int.Parse(nameSplit[2]), int.Parse(nameSplit[3]));
+        int newLevelId = int.Parse(nameSplit[4]);
+
+        Level oldLevel = MainMap.GetCurrentLevel();
+        oldLevel.RenderEntireLevel(false);
+        oldLevel.RenderMinimap(false);
+        MainMap.SetCurrentLevelId(newLevelId);
+        MainMap.SetCurrentRoomId(0);
+        Level newLevel = MainMap.GetCurrentLevel();
+        newLevel.RenderMinimap(true);
+        MainMap.GetCurrentRoom().RenderRoomObjects(true);
+        newLevel.RenderDoors(true);
+
         transform.position = to;
     }
 
@@ -127,5 +153,10 @@ public class CharacterCollisions : MonoBehaviour {
             }
             
         }
+        System.Text.StringBuilder debugText = new System.Text.StringBuilder();
+        debugText.AppendLine(string.Format("RNG seed: {0}", RNG.GetSeed()));
+        debugText.AppendLine(string.Format("Current level: {0}", MainMap.GetCurrentLevel().levelNumber));
+        debugText.AppendLine(string.Format("Current room: {0}", MainMap.GetCurrentRoom().id));
+        GlobalUIElements.debugText.text = debugText.ToString();
     }
 }

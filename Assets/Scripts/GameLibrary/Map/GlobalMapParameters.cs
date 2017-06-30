@@ -22,5 +22,6 @@ namespace GameLibrary.Map
         public static float torchWallOffset = 0.25f;
         public static int colorVarianceMax = 10;
         public static string unwalkableLayerName = "Unwalkable";
+        public static int maxDistanceBetweenTorches;
     }
 }

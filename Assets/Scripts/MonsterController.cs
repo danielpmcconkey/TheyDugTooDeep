@@ -23,16 +23,13 @@ public class MonsterController : MonoBehaviour {
         string[] nameSplit = transform.name.Split(':');
         _room = MainMap.GetCurrentLevel().rooms[int.Parse(nameSplit[1])];
         _monster = _room.GetMonster(int.Parse(nameSplit[2]));
-        _target = MainMap.GetPlayer(); // todo: set to multiple targets
-        //InvokeRepeating("UpdatePath", 1.0f, 0.3f);
+        _target = MainMap.GetPlayer();
         StartCoroutine(UpdatePath());
 
 
     }
 	
-	// Update is called once per frame
-	void Update () {
-    }
+	
 
     private void OnDrawGizmos()
     {

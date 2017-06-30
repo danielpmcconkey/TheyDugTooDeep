@@ -103,7 +103,7 @@ public class DoorCollisionTrigger : MonoBehaviour {
 
     private void OnTriggerEnter(Collider other)
     {
-        if (other.gameObject.tag == "Player")
+        if (other.gameObject.tag == "Player" && _isUnlocked)
         {
             //Debug.Log(string.Format("Door collision with {0}", other.gameObject.tag));
             _isEnter = true;

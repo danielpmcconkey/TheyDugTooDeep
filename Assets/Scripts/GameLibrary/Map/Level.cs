@@ -1,4 +1,5 @@
 ﻿#define DRAW_MAP
+#undef DRAW_MAP
 
 using System.Collections;
 using System.Collections.Generic;
@@ -56,6 +57,7 @@ namespace GameLibrary.Map
                 , new Vector3(eastEdge, GlobalMapParameters.roomHeight, northEdge), tileSet, _baseColor, _miniMapContainer);
             PopulateGridSquares(starterRoom);
             _rooms.Add(0, starterRoom);
+            starterRoom.GetContainer().parent = _container;
         }
 
 
@@ -79,6 +81,7 @@ namespace GameLibrary.Map
             for (int i = 1; i < _numMainRooms; i++) // added 1 room already
             {
                 Room room = CreateRoom(i, tileSet);
+                room.GetContainer().parent = _container;
                 _rooms.Add(i, room);
             }
             CreateCorridors(tileSet);
@@ -282,6 +285,25 @@ namespace GameLibrary.Map
             AddTorchesToWall(r, Direction.EAST);
             AddTorchesToWall(r, Direction.WEST);
         }
+        private List<float> AddTorchWallPointsBetweenSegments(List<float> wallPoints)
+        {
+            List<float> newWallPoints = new List<float>(); // use a new list to prevent adding new items to the for loop below
+
+            bool isAdded = false;
+            for(int i = 0; i < wallPoints.Count - 1; i++)
+            {
+                float lengthOfSegment = wallPoints[i + 1] - wallPoints[i];
+                newWallPoints.Add(wallPoints[i]);
+                if (lengthOfSegment > GlobalMapParameters.maxDistanceBetweenTorches)
+                {
+                    newWallPoints.Add(wallPoints[i] + (lengthOfSegment / 2));
+                    isAdded = true;
+                }
+                newWallPoints.Add(wallPoints[i + 1]);
+            }
+            if (isAdded) wallPoints = AddTorchWallPointsBetweenSegments(newWallPoints);
+            return newWallPoints;
+        }
         private void AddTorchesToWall(Room r, Direction direction)
         {
             float torchHeight = 1.25f;
@@ -304,6 +326,9 @@ namespace GameLibrary.Map
             }
             if(!wallPoints.Contains(r.GetEdge(ds.PerpendicularMax)))wallPoints.Add(r.GetEdge(ds.PerpendicularMax));
             if (wallPoints.Count > 2) wallPoints.Sort(); // prevents going out of order
+
+            wallPoints = AddTorchWallPointsBetweenSegments(wallPoints);
+
             for (int j = 0; j < wallPoints.Count - 1; j ++) // take the wall points in pairs
             {
                 
@@ -340,6 +365,8 @@ namespace GameLibrary.Map
                     {
                         int id = _rooms.Count;
                         connection.corridor.id = id;
+                        connection.corridor.GetContainer().name = string.Format("Room {0} container", id);
+
                         _rooms.Add(id, connection.corridor);
                         connection.starterRoom.AddAdjacency(new RoomAdjacency()
                         {
@@ -376,6 +403,7 @@ namespace GameLibrary.Map
                 {
                     int id = _rooms.Count;
                     connection.corridor.id = id;
+                    connection.corridor.GetContainer().name = string.Format("Room {0} container", id);
                     _rooms.Add(id, connection.corridor);
                     connection.starterRoom.AddAdjacency(new RoomAdjacency() { room = connection.corridor, adjacentWall = connection.corridor.direction });
                     connection.connectedRoom.AddAdjacency(new RoomAdjacency()
@@ -484,7 +512,7 @@ namespace GameLibrary.Map
                             float cpEastEdge = cpCenterX + (GlobalMapParameters.rightAngleConnectorSize / 2);
                             float cpWestEdge = cpCenterX - (GlobalMapParameters.rightAngleConnectorSize / 2);
                             Room centerPoint = new Room(
-                                                -1,
+                                                -4,
                                                 new Vector3(cpWestEdge, 0, cpSouthEdge),
                                                 new Vector3(cpEastEdge, GlobalMapParameters.roomHeight, cpNorthEdge),
                                                 tileSet,
@@ -499,7 +527,7 @@ namespace GameLibrary.Map
                                 float zLegEastEdge = cpCenterX + (GlobalMapParameters.corridorWidth / 2);
                                 float zLegWestEdge = cpCenterX - (GlobalMapParameters.corridorWidth / 2);
                                 Corridor zLeg = new Corridor(
-                                                -1,
+                                                -3,
                                                 new Vector3(zLegWestEdge, 0, zLegSouthEdge),
                                                 new Vector3(zLegEastEdge, GlobalMapParameters.roomHeight, zLegNorthEdge),
                                                 tileSet,
@@ -515,7 +543,7 @@ namespace GameLibrary.Map
                                     float xLegNorthEdge = cpCenterZ + (GlobalMapParameters.corridorWidth / 2);
                                     float xLegSouthEdge = cpCenterZ - (GlobalMapParameters.corridorWidth / 2);
                                     Corridor xLeg = new Corridor(
-                                                    -1,
+                                                    -3,
                                                     new Vector3(xLegWestEdge, 0, xLegSouthEdge),
                                                     new Vector3(xLegEastEdge, GlobalMapParameters.roomHeight, xLegNorthEdge),
                                                     tileSet,
@@ -563,18 +591,35 @@ namespace GameLibrary.Map
 
 
                                         centerPoint.id = _rooms.Count;
+                                        centerPoint.GetContainer().name = string.Format("Room {0} container", centerPoint.id);
                                         _rooms.Add(_rooms.Count, centerPoint);
+
                                         zLeg.id = _rooms.Count;
+                                        zLeg.GetContainer().name = string.Format("Room {0} container", zLeg.id);
                                         _rooms.Add(_rooms.Count, zLeg);
+
                                         xLeg.id = _rooms.Count;
+                                        xLeg.GetContainer().name = string.Format("Room {0} container", xLeg.id);
                                         _rooms.Add(_rooms.Count, xLeg);
                                         // add the room connections
                                         source.AddConnection(target);
                                         target.AddConnection(source);
 
                                     } // end IsThereSpaceForTheRoom(xLeg)
+                                    else
+                                    {
+                                        xLeg.DestroyRoom();
+                                        zLeg.DestroyRoom();
+                                        centerPoint.DestroyRoom();
+                                    }
                                 } // end IsThereSpaceForTheRoom(zLeg)
+                                else
+                                {
+                                    zLeg.DestroyRoom();
+                                    centerPoint.DestroyRoom();
+                                }
                             } // end IsThereSpaceForTheRoom(centerPoint)
+                            else centerPoint.DestroyRoom();
                         } // end rooms might work
 
                     } // end if j != i
@@ -747,7 +792,7 @@ namespace GameLibrary.Map
                                                 southEdge = corridorLesserEdge;
                                             }
                                             Corridor corridorCandidate = new Corridor(
-                                                -1,
+                                                -2,
                                                 new Vector3(westEdge, _startingPoint.y, southEdge),
                                                 new Vector3(eastEdge, GlobalMapParameters.roomHeight, northEdge),
                                                 tileSet,
@@ -762,6 +807,7 @@ namespace GameLibrary.Map
                                                 corridor = corridorCandidate;
                                                 connectedRoom = candidate;
                                             }
+                                            else corridorCandidate.DestroyRoom();
                                             break;
                                             
                                         }
@@ -781,6 +827,7 @@ namespace GameLibrary.Map
                 PopulateGridSquares(connection.corridor);
                 return connection;
             }
+            
             return null;
         }
         private List<List<int>> GetClosedLoops()

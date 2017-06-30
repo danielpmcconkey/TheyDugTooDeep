@@ -30,7 +30,6 @@ public class ThirdPersonCamera : MonoBehaviour {
 
     void LateUpdate() {
         // floating camera when right control is held down
-        // todo: use an input manager instead of right control to put the camera in float mode
         if (Input.GetKey(KeyCode.RightControl))
         {
             _yaw += Input.GetAxis("Mouse X") * mouseSensitivity;
@@ -40,16 +39,13 @@ public class ThirdPersonCamera : MonoBehaviour {
         }
         else snapCameraRotation();
 
-        // todo: use an input manager instead of Q and E for camera swivel
-        if (Input.GetKey(KeyCode.Q)) // swivel camera 90 degrees to the left 
+        if (Input.GetKey(KeyCode.Q)) // swivel camera to the left 
         {
             _yaw -= turnIncrement;
-            //snapYawToCardinalDirection();
         }
-        if (Input.GetKey(KeyCode.E)) // swivel camera 90 degrees to the right
+        if (Input.GetKey(KeyCode.E)) // swivel camera to the right
         {
             _yaw += turnIncrement;
-            //snapYawToCardinalDirection();
         }
 
         _currentRotation = Vector3.SmoothDamp(_currentRotation, new Vector3(_pitch, _yaw), ref _rotationSmoothVelocity, rotationSmoothTime);

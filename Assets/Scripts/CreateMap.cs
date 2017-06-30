@@ -33,6 +33,13 @@ public class CreateMap : MonoBehaviour {
     public UnityEngine.UI.Text mapProgressText;
     #endregion startup
 
+    #region UI
+    [Header("UI components")]
+    public UnityEngine.UI.Text debugText;
+    public Material minimapLineMaterial;
+    public GameObject minimapPanel;
+    #endregion startup
+
 
     #region map parameters
     [Header("Map parameters")]
@@ -52,6 +59,7 @@ public class CreateMap : MonoBehaviour {
     public float torchWallOffset = 0.25f;
     public int colorVarianceMax = 10;
     public string unwalkableLayerName = "Unwalkable";
+    public int maxDistanceBetweenTorches = 6;
     #endregion map parameters
 
     #region characters
@@ -65,24 +73,13 @@ public class CreateMap : MonoBehaviour {
 
 
     // Use this for initialization
-    void Start () {
-
-        
-        //RNG.SetSeed(8647211);
-        //RNG.SetSeed(4217468);
-        //RNG.SetSeed(2821282);
-        //RNG.SetSeed(7562148);
-        //RNG.SetSeed(2411802);
-        //RNG.SetSeed(8675309);
+    void Start ()
+    {
         RNG.SetSeed();
-        setGlobalMapParameters();
-        setGlobalBuildingMaterials();
-
-
+        SetGlobalMapParameters();
+        SetGlobalBuildingMaterials();
+        SetGlobalUIElements();
         createPortal();
-
-
-
     }
 
     public void RenderCurrentLevelStartUp()
@@ -142,74 +139,18 @@ public class CreateMap : MonoBehaviour {
 
     private void createPortal()
     {
-        int tileSet = 1; // todo: do something about tilesets
-
-        float northEdge = 0 + GlobalMapParameters.startingRoomRadius;
-        float southEdge = 0 - GlobalMapParameters.startingRoomRadius;
-        float eastEdge = 0 + GlobalMapParameters.startingRoomRadius;
-        float westEdge = 0 - GlobalMapParameters.startingRoomRadius;
-
-
-        Room portalRoom = new Room(0, new Vector3(westEdge, 10, southEdge), new Vector3(eastEdge, GlobalMapParameters.roomHeight + 10, northEdge), tileSet, portalRoomColor);
-
-        Teleporter t = new Teleporter() {
-            sourceRoom = portalRoom,
-            source = new Vector3(4, 10, -4),
-            destination = new Vector3(0, 1, 0)
-        };
-        DecorationPlaceholder dph = portalRoom.AddTeleporter(t);
-        dph.name = string.Format("Teleporter|{0}|{1}|{2}", 0, 1, 0);
-
-        // add torches, 2 on each wall
-        float torchHeight = 11.25f;
-        float torchSpacing = GlobalMapParameters.startingRoomRadius / 1.5f;
-        // north wall
-        portalRoom.AddTorch(new Vector3(
-                (0 - GlobalMapParameters.startingRoomRadius) + torchSpacing,
-                torchHeight,
-                GlobalMapParameters.startingRoomRadius - GlobalMapParameters.torchWallOffset
-            ));
-        portalRoom.AddTorch(new Vector3(
-                GlobalMapParameters.startingRoomRadius - torchSpacing,
-                torchHeight,
-                GlobalMapParameters.startingRoomRadius - GlobalMapParameters.torchWallOffset
-            ));
-        // south wall
-        portalRoom.AddTorch(new Vector3(
-                (0 - GlobalMapParameters.startingRoomRadius) + torchSpacing,
-                torchHeight,
-                0 - GlobalMapParameters.startingRoomRadius + GlobalMapParameters.torchWallOffset
-            ));
-        portalRoom.AddTorch(new Vector3(
-                GlobalMapParameters.startingRoomRadius - torchSpacing,
-                torchHeight,
-                0 - GlobalMapParameters.startingRoomRadius + GlobalMapParameters.torchWallOffset
-            ));
-        // east wall
-        portalRoom.AddTorch(new Vector3(
-                GlobalMapParameters.startingRoomRadius - GlobalMapParameters.torchWallOffset,
-                torchHeight,
-                (0 - GlobalMapParameters.startingRoomRadius) + torchSpacing
-            ));
-        portalRoom.AddTorch(new Vector3(
-                GlobalMapParameters.startingRoomRadius - GlobalMapParameters.torchWallOffset,
-                torchHeight,
-                GlobalMapParameters.startingRoomRadius - torchSpacing
-            ));
-        // west wall
-        portalRoom.AddTorch(new Vector3(
-                0 - GlobalMapParameters.startingRoomRadius + GlobalMapParameters.torchWallOffset,
-                torchHeight,
-                (0 - GlobalMapParameters.startingRoomRadius) + torchSpacing
-            ));
-        portalRoom.AddTorch(new Vector3(
-                0 - GlobalMapParameters.startingRoomRadius + GlobalMapParameters.torchWallOffset,
-                torchHeight,
-                GlobalMapParameters.startingRoomRadius - torchSpacing
-            ));
-
-        portalRoom.DrawRoom();
-        seedTextDisplay.text = string.Format("Your RNG seed is: {0}", RNG.GetSeed());
+        Level level = new Level(new Vector3(0, 0, 0), 0, portalRoomColor);
+        level.CreateStarterRoom(1);
+        level.DecorateRooms();
+        MainMap.AddLevel(level);
+        MainMap.SetCurrentLevelId(0);
+        MainMap.SetPlayer(player);
+        MainMap.SetCurrentRoomId(0);
+        level.rooms[0].DrawRoom();
+        level.rooms[0].AddLevelAdvanceTeleporter(new Vector3(4, 0, -4), new Vector3(0, 0, 0), 1);
+        RenderCurrentLevelStartUp();
+        
+        //seedTextDisplay.text = string.Format("Your RNG seed is: {0}", RNG.GetSeed());
     }
 
     private void printProgress(string newUpdate)
@@ -222,7 +163,7 @@ public class CreateMap : MonoBehaviour {
     private IEnumerator buildLevels()
     {
         _progressText = string.Empty;
-        for(int i = 0; i < GlobalMapParameters.numFloors; i++)
+        for(int i = 0; i < GlobalMapParameters.numFloors; i++)  
         {
             float percentEachLevel = Mathf.Round(96 / GlobalMapParameters.numFloors); // leave 4 % for rendering start room
             _percentMapComplete = i * percentEachLevel;
@@ -232,7 +173,7 @@ public class CreateMap : MonoBehaviour {
 
             float percentEachStep = Mathf.Round(percentEachLevel / 4);
 
-            Level level = new Level(new Vector3(0, 0, 0), i);
+            Level level = new Level(new Vector3(0, 0, 0), i + 1);
             printProgress("   Creating rooms");
             yield return null;
             level.CreateRooms();
@@ -251,6 +192,7 @@ public class CreateMap : MonoBehaviour {
             printProgress("   Hiding level objects");
             yield return null;
             level.RenderEntireLevel(false);
+            level.RenderMinimap(false);
 
             MainMap.AddLevel(level);
             _percentMapComplete += percentEachStep;
@@ -261,16 +203,17 @@ public class CreateMap : MonoBehaviour {
         printProgress("Initializing start-up");
         yield return null;
 
-        MainMap.SetCurrentLevelId(0);
-        MainMap.SetPlayer(player);
-        RenderCurrentLevelStartUp();
+        //MainMap.SetCurrentLevelId(0);
+        //MainMap.SetPlayer(player);
+        //RenderCurrentLevelStartUp();
+        
 
         _percentMapComplete = 100;
         printProgress("Game levels are complete.");
 
     }
 
-    private void setGlobalMapParameters()
+    private void SetGlobalMapParameters()
     {
         GlobalMapParameters.numFloors = numFloors;
         GlobalMapParameters.mapSize = mapSize;
@@ -288,8 +231,9 @@ public class CreateMap : MonoBehaviour {
         GlobalMapParameters.torchWallOffset = torchWallOffset;
         GlobalMapParameters.colorVarianceMax = colorVarianceMax;
         GlobalMapParameters.unwalkableLayerName = unwalkableLayerName;
+        GlobalMapParameters.maxDistanceBetweenTorches = maxDistanceBetweenTorches;
     }
-    private void setGlobalBuildingMaterials()
+    private void SetGlobalBuildingMaterials()
     {
         GlobalBuildingMaterials.roomEntryTrigger = roomEntryTrigger;
 
@@ -310,11 +254,18 @@ public class CreateMap : MonoBehaviour {
 
         GlobalBuildingMaterials.door001 = door001;
         GlobalBuildingMaterials.pentagram = pentagram;
+        
         #endregion tilesets
 
         #region characters
         GlobalBuildingMaterials.MonsterToken = MonsterToken;
         #endregion characters
 
+    }
+    private void SetGlobalUIElements()
+    {
+        GlobalUIElements.miniMapLineMaterial = minimapLineMaterial;
+        GlobalUIElements.minimapPanel = minimapPanel;
+        GlobalUIElements.debugText = debugText;
     }
 }

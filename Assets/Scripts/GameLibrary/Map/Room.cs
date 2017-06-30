@@ -95,7 +95,9 @@ namespace GameLibrary.Map
             _levelMinimapContainer = levelMinimapContainer;
             _roomMinimapContainer = new GameObject().transform;
             if (_levelMinimapContainer != null) _roomMinimapContainer.parent = _levelMinimapContainer;
-            
+
+            _container = new GameObject().transform;
+            _container.name = string.Format("Room {0} container", id); 
 
 
 
@@ -174,6 +176,7 @@ namespace GameLibrary.Map
             _instantiatedObjects.Add(monsterT);
             _monsters.Add(idInRoom, new Monster(monsterT, id, idInRoom));
             _roomGrid.UpdateGrid();
+            _isCleared = false;
         }
         public DecorationPlaceholder AddTeleporter(Teleporter t)
         {
@@ -204,8 +207,6 @@ namespace GameLibrary.Map
         }
         public virtual void DrawRoom()
         {
-            _container = new GameObject().transform;
-            _container.name = string.Format("Room {0} container", id); // putting this here because rooms are created to see if they fit and then quickly destroyed
             if (_levelMinimapContainer == null) _roomMinimapContainer.parent = _container;
 
             Transform floorContainer = DrawFloor();
@@ -233,7 +234,7 @@ namespace GameLibrary.Map
         }
         public void FadeTorches()
         {
-            _torchesContainer.BroadcastMessage("FadeIn");
+            if(_torchesContainer != null && _torchesContainer.childCount > 0) _torchesContainer.BroadcastMessage("FadeIn");
         }
 
         public List<RoomAdjacency> GetAdjacencies()
@@ -365,12 +366,16 @@ namespace GameLibrary.Map
             Quaternion rotation = Quaternion.Euler(0, 0, 0);
             Vector3 position = new Vector3(x, y, z);
 
-            Transform roomTriggerEmptyShell = GameObject.Instantiate(new GameObject(), position, rotation).transform;
-            roomTriggerEmptyShell.parent = triggerContainer;
+            triggerContainer.position = position;
+            triggerContainer.rotation = rotation;
 
-            roomTriggerEmptyShell.gameObject.AddComponent<BoxCollider>();
-            BoxCollider colliderTrigger = (BoxCollider)roomTriggerEmptyShell.GetComponent<Collider>();
-            
+            //Transform roomTriggerEmptyShell = GameObject.Instantiate(new GameObject(), position, rotation).transform;
+            //roomTriggerEmptyShell.name = "burp";
+            //roomTriggerEmptyShell.parent = triggerContainer;
+
+            triggerContainer.gameObject.AddComponent<BoxCollider>();
+            BoxCollider colliderTrigger = (BoxCollider)triggerContainer.GetComponent<Collider>();
+
             colliderTrigger.size = new Vector3(width, _ceilingY - _floorY, depth);
             colliderTrigger.isTrigger = true;
             colliderTrigger.name = string.Format("Trigger collider for room ID:{0}", id);

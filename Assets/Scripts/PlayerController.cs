@@ -36,7 +36,7 @@ public class PlayerController : MonoBehaviour {
             float targetRotation = Mathf.Atan2(inputDir.x, inputDir.y) * Mathf.Rad2Deg + cameraT.eulerAngles.y;
             transform.eulerAngles = Vector3.up * Mathf.SmoothDampAngle(transform.eulerAngles.y, targetRotation, ref turnSmoothVelocity, turnSmoothTime);
         }
-        bool running = !Input.GetKey(KeyCode.RightShift); // todo: use input manager instead of right shift to run
+        bool running = !Input.GetKey(KeyCode.RightShift);
         float targetSpeed = ((running) ? runSpeed : walkSpeed) * inputDir.magnitude;
         currentSpeed = Mathf.SmoothDamp(currentSpeed, targetSpeed, ref speedSmoothVelocity, speedSmoothTime);
 
